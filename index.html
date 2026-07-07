@@ -1,3 +1,76 @@
+function ModalAnadirTrabajador({parte,users,obras,onClose,onSave}){
+  const workers=(users||[]).filter(u=>u.role==="worker"||u.role==="capataz");
+  const participantes=parte.participantes||[];
+  // Workers not yet in parte
+  const disponibles=workers.filter(w=>w.username!==parte.worker&&!participantes.find(p=>p.worker===w.username));
+  const [sel,setSel]=useState("");
+  const [ents,setEnts]=useState((parte.entries||[]).map(e=>({...e})));
+  const [err,setErr]=useState("");
+
+  const updEnt=(i,f,v)=>{
+    const e=[...ents];e[i]={...e[i],[f]:v};
+    if(f==="horaEntrada"||f==="horaSalida"){
+      const ei=e[i];const hE2=f==="horaEntrada"?v:ei.horaEntrada;const hS2=f==="horaSalida"?v:ei.horaSalida;
+      if(hE2&&hS2){
+        const[hh,mm]=hE2.split(":").map(Number);const[hs,ms]=hS2.split(":").map(Number);
+        let min=(hs*60+ms)-(hh*60+mm);if(min<0)min+=1440;
+        const tot=min/60;let noc=0,cur=hh*60+mm;
+        for(let t=cur;t<cur+min;t++){const tt=t%1440;if(tt>=1320||tt<360)noc+=1/60;}
+        e[i].totalHoras=Math.round(tot*100)/100;e[i].horasNocturnas=Math.round(noc*100)/100;
+        let rem=Math.min(e.reduce((s,x)=>s+(x.totalHoras||0),0),8);
+        e.forEach((x,j)=>{const h=x.totalHoras||0;const ord=Math.min(h,rem);rem=Math.max(rem-ord,0);e[j].horasOrdinarias=Math.round(ord*100)/100;e[j].horasExtra=Math.round(Math.max(h-ord,0)*100)/100;});
+      }
+    }
+    if(f==="dieta"&&v)e[i].mediaDieta=false;if(f==="mediaDieta"&&v)e[i].dieta=false;
+    setEnts(e);
+  };
+
+  const confirmar=()=>{
+    if(!sel){setErr("Selecciona un trabajador");return;}
+    const nuevosParticipantes=[...(parte.participantes||[]),{worker:sel,entries:ents,incluir:true}];
+    onSave({...parte,participantes:nuevosParticipantes});
+    onClose();
+  };
+
+  return html2\`<div class="mb" onClick=\${e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div class="md" style=\${{maxWidth:560}}>
+      <div style=\${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <h3 style=\${{fontSize:16,fontWeight:800,color:"#1a3a5c"}}>Anadir trabajador al parte</h3>
+        <button onClick=\${onClose} style=\${{border:"none",background:"#f1f5f9",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16}}>X</button>
+      </div>
+      <div class="fg"><label class="lb">Trabajador a anadir</label>
+        <select class="fi" value=\${sel} onChange=\${e=>setSel(e.target.value)}>
+          <option value="">Selecciona un trabajador</option>
+          \${disponibles.map(w=>html2\`<option key=\${w.username} value=\${w.username}>\${w.name}</option>\`)}
+        </select>
+      </div>
+      \${disponibles.length===0&&html2\`<p class="er">Todos los trabajadores ya estan en este parte</p>\`}
+      <div style=\${{fontWeight:700,color:"#374151",fontSize:14,marginBottom:10}}>Datos (puedes modificarlos):</div>
+      \${ents.map((en,i)=>{
+        const ob=(obras||[]).find(o=>o.code===en.obra);
+        return html2\`<div key=\${i} class="ec" style=\${{marginBottom:10}}>
+          <div style=\${{fontWeight:700,color:"#1a3a5c",fontSize:13,marginBottom:8}}><span class="ct">\${en.obra}</span><span style=\${{marginLeft:8,color:"#6b7280",fontWeight:400,fontSize:12}}>\${ob?ob.name:""}</span></div>
+          <div style=\${{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            <div class="fg" style=\${{marginBottom:0}}><label class="lb">Entrada</label><input class="fi" type="time" value=\${en.horaEntrada||""} onInput=\${e=>updEnt(i,"horaEntrada",e.target.value)}/></div>
+            <div class="fg" style=\${{marginBottom:0}}><label class="lb">Salida</label><input class="fi" type="time" value=\${en.horaSalida||""} onInput=\${e=>updEnt(i,"horaSalida",e.target.value)}/></div>
+            <div class="fg" style=\${{marginBottom:0}}><label class="lb">Km</label><input class="fi" type="number" min="0" value=\${en.km||""} onInput=\${e=>updEnt(i,"km",e.target.value)} placeholder="0"/></div>
+          </div>
+          <div style=\${{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
+            \${[["dieta","Dieta"],["mediaDieta","1/2 Dieta"],["canasto","Canasto"]].map(([f,l])=>html2\`
+              <label key=\${f} style=\${{display:"flex",alignItems:"center",gap:6,fontSize:13,cursor:"pointer",background:"#f8fafc",padding:"5px 10px",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                <input type="checkbox" style=\${{width:16,height:16,accentColor:"#1a3a5c"}} checked=\${!!en[f]} onChange=\${e=>updEnt(i,f,e.target.checked)}/>\${l}
+              </label>\`)}
+          </div>
+        </div>\`;
+      })}
+      \${err&&html2\`<p class="er">\${err}</p>\`}
+      <div style=\${{display:"flex",gap:10,marginTop:12}}>
+        <button class="bs" style=\${{flex:1,padding:12}} onClick=\${onClose}>Cancelar</button>
+        <button class="bp" style=\${{flex:2,padding:12}} onClick=\${confirmar} disabled=\${!sel||disponibles.length===0}>Anadir al parte</button>
+      </div>
+    </div>
+  </div>\`;
+}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -258,7 +331,10 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
     {id:"cuenta",label:"Mi Cuenta",i:"M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"},
   ];
-  const myP=(partes||[]).filter(p=>p.worker===sess.username);
+  const myP=(partes||[]).filter(p=>
+    p.worker===sess.username||
+    (p.participantes||[]).some(par=>par.worker===sess.username)
+  );
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
     ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users}/>`}
@@ -275,7 +351,7 @@ function Capataz({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   const myP=(partes||[]).filter(p=>p.worker===sess.username);
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos}/>`}
-    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users}/>`}
+    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess}/>`}
     ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
   </${Layout}>`;
 }
@@ -736,6 +812,7 @@ function ParteCard({p,obras,users,onDelete,onCopy,onEdit}){
       </div>`;
     })}
     ${p.vehiculo&&html2`<div style=${{marginTop:6,padding:"6px 10px",background:"#f0f9ff",borderRadius:8,fontSize:12,color:"#0369a1",display:"flex",alignItems:"center",gap:6}}><b>Matricula:</b> ${p.vehiculo}</div>`}
+    ${(p.participantes||[]).length>0&&html2`<div style=${{marginTop:6,padding:"7px 10px",background:"#f0fdf4",borderRadius:8,fontSize:12,color:"#15803d"}}><b>Trabajadores:</b> ${(p.participantes||[]).map(par=>{const w2=(users||[]).find(u=>u.username===par.worker);return w2?w2.name:par.worker;}).join(", ")}</div>`}
     ${p.observaciones&&html2`<div style=${{marginTop:6,padding:"7px 10px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#6b7280"}}><b>Obs:</b> ${p.observaciones}</div>`}
     ${(p.entries||[]).some(e=>e.observaciones)&&(p.entries||[]).map((e,i)=>e.observaciones?html2`<div key=${i} style=${{marginTop:4,padding:"5px 10px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#6b7280"}}><span class="ct" style=${{fontSize:10,marginRight:6}}>${e.obra}</span>${e.observaciones}</div>`:null)}
     ${(p.entries||[]).some(e=>(e.materiales||[]).length>0)&&html2`<div style=${{marginTop:6,padding:"8px 10px",background:"#fafafa",borderRadius:8,border:"1px solid #e2e8f0"}}>
@@ -806,36 +883,161 @@ function MisPartes({partes,obras,sP,allP,users}){
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Mis Partes</h2>
     ${sorted.length===0?html2`<div class="cd"><p class="em">No tienes partes aun</p></div>`:
-      sorted.map(p=>html2`<${ParteCard} key=${p.id} p=${p} obras=${obras} users=${users}
-        onDelete=${id=>sP((allP||[]).filter(x=>x.id!==id))}
-        onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
-        onEdit=${updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}
-      />`)}
-  </div>`;
+      sorted.map(p=>{
+        const esDeCapataz=p.creadorCapataz&&p.worker!==sess.username||(p.participantes||[]).some(par=>par.worker===sess.username&&p.worker!==sess.username);
+        const esParticipante=(p.participantes||[]).some(par=>par.worker===sess.username);
+        // Get entries: own if worker, or participante entries
+        const entradas=esParticipante&&p.worker!==sess.username
+          ?(p.participantes||[]).find(par=>par.worker===sess.username)?.entries||p.entries
+          :p.entries;
+        const parteVista={...p,entries:entradas};
+        return html2\`<div key=\${p.id}>
+          \${esDeCapataz&&html2\`<div style=\${{background:"#f0f9ff",borderRadius:8,padding:"5px 10px",marginBottom:4,fontSize:12,color:"#0369a1",fontWeight:600}}>
+            Parte creado por encargado
+          </div>\`}
+          <\${ParteCard} p=\${parteVista} obras=\${obras} users=\${users}
+            onDelete=\${esDeCapataz?null:id=>sP((allP||[]).filter(x=>x.id!==id))}
+            onCopy=\${esDeCapataz?null:fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
+            onEdit=\${esDeCapataz?null:updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}
+          />
+        </div>\`;
+      })}
+  </div>\`;
 }
 
-function MisPartesCapataz({partes,obras,sP,allP,users}){
+function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
   const [modal,setModal]=useState(null);
-  const sorted=[...partes].sort((a,b)=>b.date.localeCompare(a.date));
-  return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
+  // Partes donde el capataz es creador (parte.worker===sess.username O parte.creadorCapataz===sess.username)
+  const misPartes=(partes||[]).filter(p=>p.worker===sess.username||p.creadorCapataz===sess.username);
+  const sorted=[...misPartes].sort((a,b)=>b.date.localeCompare(a.date));
+
+  const onSaveParte=(updated)=>{
+    sP((allP||[]).map(x=>x.id===updated.id?updated:x));
+  };
+
+  const quitarParticipante=(parte,username)=>{
+    const nuevos=(parte.participantes||[]).filter(p=>p.worker!==username);
+    // Si el encargado se quita a si mismo, marcar creadorCapataz para mantener control
+    let updatedParte={...parte,participantes:nuevos};
+    if(username===sess.username){
+      updatedParte={...updatedParte,creadorCapataz:sess.username,worker:null};
+    }
+    onSaveParte(updatedParte);
+  };
+
+  const quitarme=(parte)=>{
+    // El encargado se quita del parte pero mantiene control
+    const updatedParte={...parte,
+      worker:null,
+      creadorCapataz:sess.username,
+      workerExcluido:sess.username
+    };
+    onSaveParte(updatedParte);
+  };
+
+  const volvermeParte=(parte)=>{
+    const updatedParte={...parte,
+      worker:sess.username,
+      workerExcluido:undefined
+    };
+    onSaveParte(updatedParte);
+  };
+
+  return html2\`<div class="pw" style=\${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Mis Partes</h2>
-    <div style=${{background:"#fef3c7",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#92400e",fontWeight:600}}>
-      Eres encargado - puedes anadir trabajadores a tus partes
+    <div style=\${{background:"#fef3c7",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#92400e",fontWeight:600}}>
+      Eres encargado - puedes anadir y gestionar trabajadores en tus partes
     </div>
-    ${sorted.length===0?html2`<div class="cd"><p class="em">No tienes partes aun</p></div>`:sorted.map(p=>html2`
-      <div key=${p.id}>
-        <${ParteCard} p=${p} obras=${obras} users=${users}
-          onDelete=${id=>sP((allP||[]).filter(x=>x.id!==id))}
-          onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
-          onEdit=${updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}/>
-        <button onClick=${()=>setModal(p)} style=${{width:"100%",marginBottom:16,padding:"10px",borderRadius:9,border:"1.5px dashed #1a3a5c",background:"#f0f9ff",color:"#1a3a5c",fontWeight:700,cursor:"pointer",fontSize:13}}>
-          + Anadir trabajador a este parte
-        </button>
-      </div>`)}
-    ${modal&&html2`<${ModalAnadirTrabajador} parte=${modal} users=${users} obras=${obras}
-      onClose=${()=>setModal(null)}
-      onAdd=${np=>sP([...(allP||[]),np])}/>`}
-  </div>`;
+    \${sorted.length===0?html2\`<div class="cd"><p class="em">No tienes partes aun</p></div>\`:sorted.map(p=>{
+      const participantes=p.participantes||[];
+      const estoyIncluido=p.worker===sess.username;
+      const hO=(p.entries||[]).reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+      const hE=(p.entries||[]).reduce((s,e)=>s+(e.horasExtra||0),0);
+      return html2\`<div key=\${p.id} class="cd">
+        <!-- Cabecera parte -->
+        <div style=\${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:10,borderBottom:"1px solid #f1f5f9",flexWrap:"wrap",gap:8}}>
+          <div style=\${{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <span style=\${{fontWeight:800,color:"#1e293b",fontSize:15}}>\${fmt(p.date)}</span>
+            <span class="bg2" style=\${{background:"#fef3c7",color:"#92400e"}}>Encargado</span>
+          </div>
+          <div style=\${{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <span class="bg2" style=\${{background:"#dbeafe",color:"#1e40af"}}>\${hO.toFixed(1)}h</span>
+            \${hE>0&&html2\`<span class="bg2" style=\${{background:"#ffedd5",color:"#c2410c"}}>\${hE.toFixed(1)}h ext</span>\`}
+            <button style=\${{padding:"7px 11px",borderRadius:8,border:"none",background:"#dcfce7",color:"#15803d",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=\${()=>{}}>PDF</button>
+            <button style=\${{padding:"7px 11px",borderRadius:8,border:"none",background:"#e0f2fe",color:"#0369a1",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=\${()=>setModal({type:"edit",parte:p})}>Editar</button>
+            <button class="bd" onClick=\${()=>{if(confirm("Eliminar parte?"))sP((allP||[]).filter(x=>x.id!==p.id));}}>X</button>
+          </div>
+        </div>
+
+        <!-- Obras del parte -->
+        \${(p.entries||[]).map((e,i)=>{
+          const ob=(obras||[]).find(o=>o.code===e.obra);
+          return html2\`<div key=\${i} style=\${{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",padding:"4px 0",fontSize:13}}>
+            <span class="ct">\${e.obra}</span>
+            <span style=\${{color:"#6b7280",fontSize:12}}>\${ob?ob.name:""}</span>
+            \${e.horaEntrada&&html2\`<span class="bg2" style=\${{background:"#f1f5f9",color:"#475569",fontFamily:"monospace"}}>\${e.horaEntrada}-\${e.horaSalida}</span>\`}
+          </div>\`;
+        })}
+
+        <!-- Lista de participantes -->
+        <div style=\${{marginTop:12,padding:"10px 12px",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0"}}>
+          <div style=\${{fontSize:12,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:".4px",marginBottom:8}}>Trabajadores en este parte</div>
+
+          <!-- El encargado -->
+          <div style=\${{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
+            <div style=\${{display:"flex",alignItems:"center",gap:8}}>
+              <span style=\${{width:8,height:8,borderRadius:"50%",background:estoyIncluido?"#16a34a":"#94a3b8",display:"inline-block"}}/>
+              <span style=\${{fontSize:13,fontWeight:600,color:estoyIncluido?"#1e293b":"#94a3b8"}}>
+                \${(users||[]).find(u=>u.username===sess.username)?.name||sess.username} (tu)
+              </span>
+              \${!estoyIncluido&&html2\`<span style=\${{fontSize:11,color:"#94a3b8"}}>- No incluido en el parte</span>\`}
+            </div>
+            \${estoyIncluido
+              ?html2\`<button class="bw" style=\${{padding:"4px 10px",fontSize:11}} onClick=\${()=>{if(confirm("Quitarte del parte? Seguiras siendo el responsable."))quitarme(p);}}>Quitarme</button>\`
+              :html2\`<button class="bv" style=\${{padding:"4px 10px",fontSize:11}} onClick=\${()=>volvermeParte(p)}>Incluirme</button>\`
+            }
+          </div>
+
+          <!-- Otros participantes -->
+          \${participantes.map((par,i)=>{
+            const w=(users||[]).find(u=>u.username===par.worker);
+            const phO=(par.entries||[]).reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+            const phE=(par.entries||[]).reduce((s,e)=>s+(e.horasExtra||0),0);
+            return html2\`<div key=\${i} style=\${{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",flexWrap:"wrap",gap:4}}>
+              <div style=\${{display:"flex",alignItems:"center",gap:8}}>
+                <span style=\${{width:8,height:8,borderRadius:"50%",background:"#16a34a",display:"inline-block"}}/>
+                <span style=\${{fontSize:13,fontWeight:600,color:"#1e293b"}}>\${w?w.name:par.worker}</span>
+                <span class="bg2" style=\${{background:"#dbeafe",color:"#1e40af",fontSize:10}}>\${phO.toFixed(1)}h\${phE>0?" + "+phE.toFixed(1)+"ext":""}</span>
+              </div>
+              <button class="bd" style=\${{padding:"4px 10px",fontSize:11}} onClick=\${()=>{if(confirm("Quitar a \${w?w.name:par.worker} del parte?"))quitarParticipante(p,par.worker);}}>Quitar</button>
+            </div>\`;
+          })}
+
+          \${participantes.length===0&&!estoyIncluido&&html2\`<p style=\${{fontSize:12,color:"#94a3b8",padding:"4px 0"}}>Sin trabajadores incluidos</p>\`}
+        </div>
+
+        <!-- Botones accion -->
+        <div style=\${{display:"flex",gap:8,marginTop:10}}>
+          <button onClick=\${()=>setModal({type:"add",parte:p})} style=\${{flex:1,padding:"9px",borderRadius:9,border:"1.5px dashed #1a3a5c",background:"#f0f9ff",color:"#1a3a5c",fontWeight:700,cursor:"pointer",fontSize:13}}>
+            + Anadir trabajador
+          </button>
+          <button onClick=\${()=>setModal({type:"copy",parte:p})} style=\${{padding:"9px 14px",borderRadius:9,border:"1.5px solid #e2e8f0",background:"#fff",color:"#374151",fontWeight:700,cursor:"pointer",fontSize:13}}>
+            Copiar
+          </button>
+        </div>
+      </div>\`;
+    })}
+
+    \${modal?.type==="add"&&html2\`<\${ModalAnadirTrabajador} parte=\${modal.parte} users=\${users} obras=\${obras}
+      onClose=\${()=>setModal(null)}
+      onSave=\${(updated)=>{onSaveParte(updated);setModal(null);}}/>\`}
+    \${modal?.type==="edit"&&html2\`<\${ModalEditParte} parte=\${modal.parte} obras=\${obras}
+      onClose=\${()=>setModal(null)}
+      onSave=\${(updated)=>{onSaveParte(updated);setModal(null);}}/>\`}
+    \${modal?.type==="copy"&&html2\`<\${CopyModal} parte=\${modal.parte}
+      onClose=\${()=>setModal(null)}
+      onCopy=\${fechas=>{const n=fechas.map(f=>({...modal.parte,date:f,id:Date.now()+Math.random(),participantes:[]}));sP([...(allP||[]),...n]);setModal(null);}}/>\`}
+  </div>\`;
 }
 
 function TodosPartes({partes,obras,users,sP}){
@@ -1147,12 +1349,14 @@ function generarPDF(parte,obras,users,sigT,sigC,cliente){
   doc.setFontSize(16);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
   doc.text("PARTE DE TRABAJO",W/2,y,{align:"center"});y+=8;
   const worker=(users||[]).find(u=>u.username===parte.worker);
+  const participantes=(parte.participantes||[]);
+  const todosWorkers=worker?[{user:worker,entries:parte.entries},...participantes.map(p=>({user:(users||[]).find(u=>u.username===p.worker)||{name:p.worker},entries:p.entries}))]:[...participantes.map(p=>({user:(users||[]).find(u=>u.username===p.worker)||{name:p.worker},entries:p.entries}))];
   doc.setFontSize(9);doc.setTextColor(80);doc.setFont(undefined,"normal");
   doc.text("Parte: PT-"+String(parte.id).slice(-6),mg,y);doc.text("Fecha: "+fmt(parte.date),W-mg,y,{align:"right"});y+=10;
   const col2=W/2+2;const boxH=28;
   doc.setFillColor(240,245,255);doc.setDrawColor(200,210,230);doc.roundedRect(mg,y,(W-mg*2)/2-2,boxH,2,2,"FD");
   doc.setFontSize(8);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("TRABAJADOR",mg+4,y+6);
-  doc.setFont(undefined,"normal");doc.setTextColor(50);doc.text(worker?worker.name:parte.worker,mg+4,y+13);
+  doc.setFont(undefined,"normal");doc.setTextColor(50);doc.text((todosWorkers.map(tw=>tw.user?.name||tw.user?.username||'').filter(Boolean).join(', ')||parte.worker).substring(0,45),mg+4,y+13);
   doc.setFillColor(255,252,235);doc.setDrawColor(230,210,150);doc.roundedRect(col2,y,(W-mg*2)/2-2,boxH,2,2,"FD");
   doc.setFontSize(8);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");doc.text("CLIENTE / OBRA",col2+4,y+6);
   doc.setFont(undefined,"normal");doc.setTextColor(50);doc.text(cliente.nombre||"",col2+4,y+13);
@@ -1193,7 +1397,7 @@ function generarPDF(parte,obras,users,sigT,sigC,cliente){
   doc.setDrawColor(180);doc.setLineWidth(0.3);doc.roundedRect(mg,y,sigW,sigH,2,2);
   doc.setFontSize(7.5);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("FIRMA DEL TRABAJADOR",mg+sigW/2,y+5,{align:"center"});
   if(sigT){try{doc.addImage(sigT,"PNG",mg+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
-  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);doc.text(worker?worker.name:parte.worker,mg+sigW/2,y+sigH-3,{align:"center"});
+  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);doc.text((worker?worker.name:parte.worker).substring(0,30),mg+sigW/2,y+sigH-3,{align:"center"});
   doc.roundedRect(sig2x,y,sigW,sigH,2,2);doc.setFontSize(7.5);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");doc.text("FIRMA DEL CLIENTE",sig2x+sigW/2,y+5,{align:"center"});
   if(sigC){try{doc.addImage(sigC,"PNG",sig2x+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
   doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);doc.text(cliente.nombre||"Cliente",sig2x+sigW/2,y+sigH-3,{align:"center"});
