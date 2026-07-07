@@ -891,7 +891,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
           <div style=${{display:"flex",gap:6,flexWrap:"wrap"}}>
             <span class="bg2" style=${{background:"#dbeafe",color:"#1e40af"}}>${hO.toFixed(1)}h</span>
             ${hE>0&&html2`<span class="bg2" style=${{background:"#ffedd5",color:"#c2410c"}}>${hE.toFixed(1)}h ext</span>`}
-            <button style=${{padding:"7px 11px",borderRadius:8,border:"none",background:"#dcfce7",color:"#15803d",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=${()=>{}}>PDF</button>
+            <button style=${{padding:"7px 11px",borderRadius:8,border:"none",background:"#dcfce7",color:"#15803d",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=${()=>setModal({type:"pdf",parte:p})}>PDF</button>
             <button style=${{padding:"7px 11px",borderRadius:8,border:"none",background:"#e0f2fe",color:"#0369a1",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=${()=>setModal({type:"edit",parte:p})}>Editar</button>
             <button class="bd" onClick=${()=>{if(confirm("Eliminar parte?"))sP((allP||[]).filter(x=>x.id!==p.id));}}>X</button>
           </div>
@@ -962,6 +962,8 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
     ${modal?.type==="edit"&&html2`<${ModalEditParte} parte=${modal.parte} obras=${obras}
       onClose=${()=>setModal(null)}
       onSave=${(updated)=>{onSaveParte(updated);setModal(null);}}/>`}
+    ${modal?.type==="pdf"&&html2`<${ModalFirmas} parte=${modal.parte} obras=${obras} users=${users}
+      onClose=${()=>setModal(null)}/>`}
     ${modal?.type==="copy"&&html2`<${CopyModal} parte=${modal.parte}
       onClose=${()=>setModal(null)}
       onCopy=${fechas=>{const n=fechas.map(f=>({...modal.parte,date:f,id:Date.now()+Math.random(),participantes:[]}));sP([...(allP||[]),...n]);setModal(null);}}/>`}
