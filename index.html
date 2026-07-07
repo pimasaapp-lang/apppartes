@@ -125,10 +125,11 @@ function App(){
         const fo=(Array.isArray(o)&&o.length)?o:ls.g("obras",IO);
         const fp=Array.isArray(p)?p:ls.g("partes",[]);
         // vehiculos: handle null, 0, {_empty:true} or array
+        const _defV=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
         let fv=[];
-        if(Array.isArray(v))fv=v;
+        if(Array.isArray(v)&&v.length)fv=v;
         else if(v&&typeof v==="object"&&!v._empty)fv=Object.values(v);
-        else fv=ls.g("vehiculos",[]);
+        else fv=ls.g("vehiculos",_defV);
         setUR(fu);setOR(fo);setPR(fp);setVR(fv);
         if(!Array.isArray(u)||!u.length)fb.set("users",fu);
         if(!Array.isArray(o)||!o.length)fb.set("obras",fo);
@@ -137,7 +138,8 @@ function App(){
         setUR(ls.g("users",[IM,...IW]));
         setOR(ls.g("obras",IO));
         setPR(ls.g("partes",[]));
-        setVR(ls.g("vehiculos",[]));
+        const defaultV2=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
+        setVR(ls.g("vehiculos",defaultV2));
         console.warn("Firebase load error:",e);
       }
       setLoading(false);
@@ -824,7 +826,8 @@ function MisPartesCapataz({partes,obras,sP,allP,users}){
       <div key=${p.id}>
         <${ParteCard} p=${p} obras=${obras} users=${users}
           onDelete=${id=>sP((allP||[]).filter(x=>x.id!==id))}
-          onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}/>
+          onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
+          onEdit=${updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}/>
         <button onClick=${()=>setModal(p)} style=${{width:"100%",marginBottom:16,padding:"10px",borderRadius:9,border:"1.5px dashed #1a3a5c",background:"#f0f9ff",color:"#1a3a5c",fontWeight:700,cursor:"pointer",fontSize:13}}>
           + Anadir trabajador a este parte
         </button>
