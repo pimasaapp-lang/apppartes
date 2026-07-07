@@ -1272,67 +1272,179 @@ function generarPDF(parte,obras,users,sigT,sigC,cliente){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
   const W=210,mg=15;let y=mg;
+
+  // ── Cabecera con logo ──────────────────────────────────
   try{doc.addImage(LOGO,"PNG",mg,y,40,18,undefined,"FAST");}catch(e){}
   doc.setFontSize(8);doc.setTextColor(100);
-  doc.text("PIMASA",W-mg,y+4,{align:"right"});doc.text("Instalaciones Electricas",W-mg,y+8,{align:"right"});
-  y+=22;doc.setDrawColor(26,58,92);doc.setLineWidth(0.8);doc.line(mg,y,W-mg,y);y+=6;
+  doc.text("PROYECTOS INSTALACIONES Y MANTENIMIENTOS ANDALUCES SA",W-mg,y+4,{align:"right"});
+  doc.text("Instalaciones Electricas",W-mg,y+9,{align:"right"});
+  y+=22;
+  doc.setDrawColor(26,58,92);doc.setLineWidth(0.8);doc.line(mg,y,W-mg,y);y+=6;
   doc.setFontSize(16);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
   doc.text("PARTE DE TRABAJO",W/2,y,{align:"center"});y+=8;
-  const worker=(users||[]).find(u=>u.username===parte.worker);
-  const participantes=(parte.participantes||[]);
-  const todosWorkers=worker?[{user:worker,entries:parte.entries},...participantes.map(p=>({user:(users||[]).find(u=>u.username===p.worker)||{name:p.worker},entries:p.entries}))]:[...participantes.map(p=>({user:(users||[]).find(u=>u.username===p.worker)||{name:p.worker},entries:p.entries}))];
   doc.setFontSize(9);doc.setTextColor(80);doc.setFont(undefined,"normal");
-  doc.text("Parte: PT-"+String(parte.id).slice(-6),mg,y);doc.text("Fecha: "+fmt(parte.date),W-mg,y,{align:"right"});y+=10;
-  const col2=W/2+2;const boxH=28;
-  doc.setFillColor(240,245,255);doc.setDrawColor(200,210,230);doc.roundedRect(mg,y,(W-mg*2)/2-2,boxH,2,2,"FD");
-  doc.setFontSize(8);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("TRABAJADOR",mg+4,y+6);
-  doc.setFont(undefined,"normal");doc.setTextColor(50);doc.text((todosWorkers.map(tw=>tw.user?.name||tw.user?.username||'').filter(Boolean).join(', ')||parte.worker).substring(0,45),mg+4,y+13);
-  doc.setFillColor(255,252,235);doc.setDrawColor(230,210,150);doc.roundedRect(col2,y,(W-mg*2)/2-2,boxH,2,2,"FD");
-  doc.setFontSize(8);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");doc.text("CLIENTE / OBRA",col2+4,y+6);
-  doc.setFont(undefined,"normal");doc.setTextColor(50);doc.text(cliente.nombre||"",col2+4,y+13);
-  if(cliente.direccion)doc.text(cliente.direccion,col2+4,y+19);
-  if(cliente.telefono)doc.text("Tel: "+cliente.telefono,col2+4,y+25);
+  doc.text("Parte: PT-"+String(parte.id).slice(-6),mg,y);
+  doc.text("Fecha: "+fmt(parte.date),W-mg,y,{align:"right"});y+=10;
+
+  // ── Empresa y Obra ─────────────────────────────────────
+  const obraObj=(obras||[]).find(o=>o.code===(parte.entries||[])[0]?.obra);
+  const obrasCodes=[...new Set((parte.entries||[]).map(e=>e.obra))];
+  const obrasNames=obrasCodes.map(c=>{const o=(obras||[]).find(ob=>ob.code===c);return o?c+" - "+o.name:c;}).join(", ");
+  const col2=W/2+2;const boxH=32;
+
+  // Box cliente (izquierda)
+  doc.setFillColor(255,252,235);doc.setDrawColor(230,210,150);
+  doc.roundedRect(mg,y,(W-mg*2)/2-2,boxH,2,2,"FD");
+  doc.setFontSize(8);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");
+  doc.text("CLIENTE",mg+4,y+6);
+  doc.setFont(undefined,"normal");doc.setTextColor(50);
+  if(cliente.nombre)doc.text(cliente.nombre,mg+4,y+12);
+  if(cliente.direccion)doc.text(cliente.direccion,mg+4,y+18);
+  if(cliente.telefono)doc.text("Tel: "+cliente.telefono,mg+4,y+24);
+
+  // Box obra (derecha)
+  doc.setFillColor(240,245,255);doc.setDrawColor(200,210,230);
+  doc.roundedRect(col2,y,(W-mg*2)/2-2,boxH,2,2,"FD");
+  doc.setFontSize(8);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+  doc.text("OBRA",col2+4,y+6);
+  doc.setFont(undefined,"normal");doc.setTextColor(50);doc.setFontSize(8);
+  const obraLabel=obraObj?obraObj.code+" - "+obraObj.name:obrasNames;
+  const obraLines=doc.splitTextToSize(obraLabel,(W-mg*2)/2-10);
+  doc.text(obraLines,col2+4,y+12);
   y+=boxH+8;
-  doc.setFontSize(9);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("DETALLE DE TRABAJOS",mg,y);y+=5;
-  const cols=[50,20,16,16,16,18,14];const heads=["Obra","Horario","H.Ord","H.Extra","H.Noc","Total","Km"];
+
+  // ── Tabla de trabajadores ──────────────────────────────
+  // Build list: capataz + participantes
+  const capataz=parte.worker?(users||[]).find(u=>u.username===parte.worker):null;
+  const participantes=parte.participantes||[];
+  const todosWorkers=[];
+  if(capataz)todosWorkers.push({user:capataz,entries:parte.entries||[]});
+  participantes.forEach(p=>{
+    const u=(users||[]).find(u=>u.username===p.worker)||{name:p.worker,username:p.worker};
+    todosWorkers.push({user:u,entries:p.entries||parte.entries||[]});
+  });
+  if(todosWorkers.length===0)todosWorkers.push({user:{name:parte.worker,username:parte.worker},entries:parte.entries||[]});
+
+  doc.setFontSize(10);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+  doc.text("DETALLE POR TRABAJADOR",mg,y);y+=5;
+
+  // Table headers
+  const cols=[52,18,14,14,14,14,12,8,8,8];
+  const heads=["Trabajador","Horario","H.Ord","H.Extra","H.Noc","Total","Km","Dieta","Cnst","Grd"];
   let cx=mg;const cX=[];cols.forEach(c=>{cX.push(cx);cx+=c;});
-  doc.setFillColor(26,58,92);doc.setTextColor(255);doc.rect(mg,y,W-mg*2,7,"F");
-  doc.setFontSize(7.5);doc.setFont(undefined,"bold");heads.forEach((h,i)=>{doc.text(h,cX[i]+1,y+5);});y+=7;
-  let totHO=0,totHE=0,totKm=0;
-  doc.setTextColor(30);doc.setFont(undefined,"normal");doc.setFontSize(8);
-  (parte.entries||[]).forEach((e,i)=>{
-    const ob=(obras||[]).find(o=>o.code===e.obra);
-    if(i%2===0){doc.setFillColor(248,250,252);doc.rect(mg,y,W-mg*2,7,"F");}
-    doc.text((e.obra+" "+(ob?ob.name:"")).substring(0,32),cX[0]+1,y+5);
-    doc.text((e.horaEntrada&&e.horaSalida)?e.horaEntrada+"-"+e.horaSalida:"-",cX[1]+1,y+5);
-    doc.text(String(e.horasOrdinarias||0),cX[2]+1,y+5);doc.text(String(e.horasExtra||0),cX[3]+1,y+5);
-    doc.text(String(e.horasNocturnas||0),cX[4]+1,y+5);
-    doc.text(String(((e.horasOrdinarias||0)+(e.horasExtra||0)).toFixed(1)),cX[5]+1,y+5);
-    doc.text(String(parseFloat(e.km)||0),cX[6]+1,y+5);
-    totHO+=(e.horasOrdinarias||0);totHE+=(e.horasExtra||0);totKm+=parseFloat(e.km)||0;
+  doc.setFillColor(26,58,92);doc.setTextColor(255);
+  doc.rect(mg,y,W-mg*2,7,"F");
+  doc.setFontSize(7);doc.setFont(undefined,"bold");
+  heads.forEach((h,i)=>{doc.text(h,cX[i]+1,y+5);});y+=7;
+
+  // Rows per worker
+  let sumHO=0,sumHE=0,sumHN=0,sumKm=0,sumD=0,sumMD=0,sumC=0,sumG=0;
+  doc.setTextColor(30);doc.setFont(undefined,"normal");doc.setFontSize(7.5);
+  todosWorkers.forEach((tw,wi)=>{
+    const wName=(tw.user?.name||tw.user?.username||"").substring(0,28);
+    const wEntries=tw.entries||[];
+    const wHO=wEntries.reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+    const wHE=wEntries.reduce((s,e)=>s+(e.horasExtra||0),0);
+    const wHN=wEntries.reduce((s,e)=>s+(e.horasNocturnas||0),0);
+    const wKm=wEntries.reduce((s,e)=>s+(parseFloat(e.km)||0),0);
+    const wD=wEntries.some(e=>e.dieta);
+    const wMD=wEntries.some(e=>e.mediaDieta);
+    const wC=wEntries.some(e=>e.canasto);
+    const wG=wEntries.some(e=>e.guardia);
+    const wTot=wHO+wHE;
+    const horario=wEntries[0]&&wEntries[0].horaEntrada?wEntries[0].horaEntrada+"-"+wEntries[wEntries.length-1].horaSalida:"-";
+    if(wi%2===0){doc.setFillColor(248,250,252);doc.rect(mg,y,W-mg*2,7,"F");}
+    doc.text(wName,cX[0]+1,y+5);
+    doc.text(horario,cX[1]+1,y+5);
+    doc.text(String(wHO),cX[2]+1,y+5);
+    doc.text(String(wHE),cX[3]+1,y+5);
+    doc.text(String(wHN.toFixed(1)),cX[4]+1,y+5);
+    doc.text(String(wTot.toFixed(1)),cX[5]+1,y+5);
+    doc.text(String(wKm.toFixed(0)),cX[6]+1,y+5);
+    doc.text(wD?"Si":wMD?"1/2":"No",cX[7]+1,y+5);
+    doc.text(wC?"Si":"No",cX[8]+1,y+5);
+    doc.text(wG?"Si":"No",cX[9]+1,y+5);
+    sumHO+=wHO;sumHE+=wHE;sumHN+=wHN;sumKm+=wKm;
+    if(wD)sumD++;if(wMD)sumMD++;if(wC)sumC++;if(wG)sumG++;
     y+=7;doc.setDrawColor(230);doc.line(mg,y,W-mg,y);
   });
-  doc.setFillColor(26,58,92);doc.setTextColor(255);doc.setFont(undefined,"bold");doc.rect(mg,y,W-mg*2,7,"F");
-  doc.text("TOTALES",cX[0]+1,y+5);doc.text(String(totHO),cX[2]+1,y+5);doc.text(String(totHE),cX[3]+1,y+5);
-  doc.text(String((totHO+totHE).toFixed(1)),cX[5]+1,y+5);doc.text(String(totKm.toFixed(0)),cX[6]+1,y+5);y+=12;
-  if(parte.observaciones){
-    doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.setFontSize(9);doc.text("OBSERVACIONES:",mg,y);y+=5;
-    doc.setTextColor(60);doc.setFont(undefined,"normal");doc.setFontSize(8);
-    const lines=doc.splitTextToSize(parte.observaciones,W-mg*2);doc.text(lines,mg,y);y+=lines.length*4+6;
+
+  // Totals row
+  doc.setFillColor(26,58,92);doc.setTextColor(255);doc.setFont(undefined,"bold");
+  doc.rect(mg,y,W-mg*2,7,"F");
+  doc.text("TOTALES",cX[0]+1,y+5);
+  doc.text(String(sumHO),cX[2]+1,y+5);
+  doc.text(String(sumHE),cX[3]+1,y+5);
+  doc.text(String(sumHN.toFixed(1)),cX[4]+1,y+5);
+  doc.text(String((sumHO+sumHE).toFixed(1)),cX[5]+1,y+5);
+  doc.text(String(sumKm.toFixed(0)),cX[6]+1,y+5);
+  doc.text(String(sumD),cX[7]+1,y+5);
+  doc.text(String(sumC),cX[8]+1,y+5);
+  doc.text(String(sumG),cX[9]+1,y+5);
+  y+=10;
+
+  // ── Materiales ─────────────────────────────────────────
+  const todosMateriales=(parte.entries||[]).flatMap(e=>(e.materiales||[]).filter(m=>m.descripcion));
+  if(todosMateriales.length>0){
+    if(y>220){doc.addPage();y=mg;}
+    doc.setFontSize(10);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("MATERIALES UTILIZADOS",mg,y);y+=5;
+    doc.setFillColor(26,58,92);doc.setTextColor(255);
+    doc.rect(mg,y,W-mg*2,7,"F");
+    doc.setFontSize(7.5);doc.setFont(undefined,"bold");
+    doc.text("Descripcion",mg+2,y+5);
+    doc.text("Uds",W-mg-15,y+5,{align:"right"});
+    y+=7;
+    doc.setTextColor(30);doc.setFont(undefined,"normal");
+    todosMateriales.forEach((m,i)=>{
+      if(i%2===0){doc.setFillColor(248,250,252);doc.rect(mg,y,W-mg*2,6,"F");}
+      doc.text(m.descripcion.substring(0,70),mg+2,y+4.5);
+      doc.text(String(m.unidades||"-"),W-mg-2,y+4.5,{align:"right"});
+      y+=6;doc.setDrawColor(230);doc.line(mg,y,W-mg,y);
+    });
+    y+=5;
   }
+
+  // ── Observaciones ──────────────────────────────────────
+  const obsArr=(parte.entries||[]).filter(e=>e.observaciones);
+  if(obsArr.length>0){
+    if(y>220){doc.addPage();y=mg;}
+    doc.setFontSize(9);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("OBSERVACIONES",mg,y);y+=5;
+    doc.setFont(undefined,"normal");doc.setFontSize(8);doc.setTextColor(60);
+    obsArr.forEach(e=>{
+      const ob=(obras||[]).find(o=>o.code===e.obra);
+      const label=(ob?e.obra+" - "+ob.name.substring(0,20):e.obra)+": ";
+      const lines=doc.splitTextToSize(label+e.observaciones,W-mg*2);
+      doc.text(lines,mg,y);y+=lines.length*4+3;
+    });
+    y+=3;
+  }
+
+  // ── Firmas ─────────────────────────────────────────────
   if(y>220){doc.addPage();y=mg;}
   y+=4;doc.setDrawColor(26,58,92);doc.setLineWidth(0.4);doc.line(mg,y,W-mg,y);y+=6;
-  doc.setFontSize(10);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("FIRMAS",W/2,y,{align:"center"});y+=8;
+  doc.setFontSize(10);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+  doc.text("FIRMAS",W/2,y,{align:"center"});y+=8;
   const sigW=(W-mg*2)/2-5;const sigH=35;const sig2x=mg+sigW+10;
-  doc.setDrawColor(180);doc.setLineWidth(0.3);doc.roundedRect(mg,y,sigW,sigH,2,2);
-  doc.setFontSize(7.5);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");doc.text("FIRMA DEL TRABAJADOR",mg+sigW/2,y+5,{align:"center"});
+  doc.setDrawColor(180);doc.setLineWidth(0.3);
+  doc.roundedRect(mg,y,sigW,sigH,2,2);
+  doc.setFontSize(7.5);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+  doc.text("FIRMA DEL TRABAJADOR",mg+sigW/2,y+5,{align:"center"});
   if(sigT){try{doc.addImage(sigT,"PNG",mg+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
-  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);doc.text((worker?worker.name:parte.worker).substring(0,30),mg+sigW/2,y+sigH-3,{align:"center"});
-  doc.roundedRect(sig2x,y,sigW,sigH,2,2);doc.setFontSize(7.5);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");doc.text("FIRMA DEL CLIENTE",sig2x+sigW/2,y+5,{align:"center"});
+  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);
+  const workerName=capataz?capataz.name:(parte.worker||"");
+  doc.text(workerName.substring(0,30),mg+sigW/2,y+sigH-3,{align:"center"});
+  doc.roundedRect(sig2x,y,sigW,sigH,2,2);
+  doc.setFontSize(7.5);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");
+  doc.text("FIRMA DEL CLIENTE",sig2x+sigW/2,y+5,{align:"center"});
   if(sigC){try{doc.addImage(sigC,"PNG",sig2x+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
-  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);doc.text(cliente.nombre||"Cliente",sig2x+sigW/2,y+sigH-3,{align:"center"});
-  y+=sigH+8;doc.setDrawColor(26,58,92);doc.setLineWidth(0.4);doc.line(mg,y,W-mg,y);y+=4;
-  doc.setFontSize(7);doc.setTextColor(120);doc.text("Documento generado - GestionObras Pro",W/2,y,{align:"center"});
+  doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);
+  doc.text((cliente.nombre||"Cliente").substring(0,30),sig2x+sigW/2,y+sigH-3,{align:"center"});
+  y+=sigH+8;
+  doc.setDrawColor(26,58,92);doc.setLineWidth(0.4);doc.line(mg,y,W-mg,y);y+=4;
+  doc.setFontSize(7);doc.setTextColor(120);
+  doc.text("Documento generado - GestionObras Pro | PROYECTOS INSTALACIONES Y MANTENIMIENTOS ANDALUCES SA",W/2,y,{align:"center"});
   doc.save("parte_"+parte.id+"_"+parte.date+".pdf");
 }
 
