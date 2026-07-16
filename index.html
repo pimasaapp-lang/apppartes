@@ -275,7 +275,7 @@ function Capataz({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
     {id:"cuenta",label:"Mi Cuenta",i:"M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"},
   ];
-  const myP=(partes||[]).filter(p=>p.worker===sess.username);
+  const myP=(partes||[]).filter(p=>p.worker===sess.username||p.creadorCapataz===sess.username);
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos}/>`}
     ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess}/>`}
