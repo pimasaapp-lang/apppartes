@@ -264,7 +264,7 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   );
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
-    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users}/>`}
+    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess}/>`}
     ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
   </${Layout}>`;
 }
@@ -806,7 +806,7 @@ function CopyModal({parte,onClose,onCopy}){
   </div>`;
 }
 
-function MisPartes({partes,obras,sP,allP,users}){
+function MisPartes({partes,obras,sP,allP,users,sess}){
   const sorted=[...partes].sort((a,b)=>b.date.localeCompare(a.date));
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Mis Partes</h2>
