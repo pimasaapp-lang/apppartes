@@ -542,7 +542,7 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
       </div>`}
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <span style=${{fontSize:14,fontWeight:700,color:"#374151"}}>Lineas de trabajo</span>
-        <button class="bs" onClick=${()=>setEnts([...ents,eVacio(obras)])}>+ Obra</button>
+        <button class="bs" onClick=${()=>setEnts([eVacio(obras),...ents])}>+ Obra</button>
       </div>
       ${ents.map((en,i)=>html2`<div key=${i} class="ec">
         <div style=${{display:"flex",justifyContent:"space-between",marginBottom:12}}>
