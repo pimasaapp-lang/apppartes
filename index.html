@@ -77,6 +77,13 @@ const fb = {
   async get(k){try{const r=await fetch(FB_URL+"/"+k+".json");if(!r.ok)return null;return r.json();}catch{return null;}},
   async set(k,v){try{await fetch(FB_URL+"/"+k+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(v)});ls.s(k,v);}catch{ls.s(k,v);}}
 };
+// Decode unicode escapes in strings (e.g. \u00e9 -> é)
+function fixUnicode(obj){
+  if(typeof obj==="string")return obj.replace(/\\u([0-9a-fA-F]{4})/g,(_,h)=>String.fromCharCode(parseInt(h,16)));
+  if(Array.isArray(obj))return obj.map(fixUnicode);
+  if(obj&&typeof obj==="object"){const r={};for(const k in obj)r[k]=fixUnicode(obj[k]);return r;}
+  return obj;
+}
 
 const IM = {username:"admin",password:"1234",role:"manager",name:"Administrador"};
 const IW = _USERS.filter(u=>u.role!=="manager");
@@ -121,9 +128,9 @@ function App(){
     (async()=>{
       try{
         const[u,o,p,v]=await Promise.all([fb.get("users"),fb.get("obras"),fb.get("partes"),fb.get("vehiculos")]);
-        const fu=(Array.isArray(u)&&u.length)?u:ls.g("users",[IM,...IW]);
-        const fo=(Array.isArray(o)&&o.length)?o:ls.g("obras",IO);
-        const fp=Array.isArray(p)?p:ls.g("partes",[]);
+        const fu=fixUnicode((Array.isArray(u)&&u.length)?u:ls.g("users",[IM,...IW]));
+        const fo=fixUnicode((Array.isArray(o)&&o.length)?o:ls.g("obras",IO));
+        const fp=fixUnicode(Array.isArray(p)?p:ls.g("partes",[]));
         // vehiculos: handle null, 0, {_empty:true} or array
         const _defV=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
         let fv=[];
