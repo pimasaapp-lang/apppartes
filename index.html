@@ -128,16 +128,26 @@ function App(){
     (async()=>{
       try{
         const[u,o,p,v]=await Promise.all([fb.get("users"),fb.get("obras"),fb.get("partes"),fb.get("vehiculos")]);
-        const fu=fixUnicode((Array.isArray(u)&&u.length)?u:ls.g("users",[IM,...IW]));
-        const fo=fixUnicode((Array.isArray(o)&&o.length)?o:ls.g("obras",IO));
-        const fp=fixUnicode(Array.isArray(p)?p:ls.g("partes",[]));
+        // Firebase returns objects {0:{...},1:{...}} not arrays - convert properly
+        const toArr=x=>{
+          if(!x)return [];
+          if(Array.isArray(x))return x;
+          if(typeof x==="object")return Object.values(x).filter(v=>v&&typeof v==="object");
+          return [];
+        };
+        const fu=fixUnicode(toArr(u).length?toArr(u):ls.g("users",[IM,...IW]));
+        const fo=fixUnicode(toArr(o).length?toArr(o):ls.g("obras",IO));
+        const fp=fixUnicode(toArr(p).length?toArr(p):ls.g("partes",[]));
         // vehiculos: handle null, 0, {_empty:true} or array
         const _defV=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
         let fv=[];
         const vArr=Array.isArray(v)?v:(v&&typeof v==="object"&&!v._empty?Object.values(v):[]);
         if(vArr.length)fv=fixUnicode(vArr);
         else fv=ls.g("vehiculos",_defV);
-        setUR(fu);setOR(fo);setPR(fp);setVR(fv);
+        // Apply stored roles override (protects capataz assignments from Firebase resets)
+        const rolesOverride=ls.g("roles_override",{});
+        const fuWithRoles=fu.map(u=>rolesOverride[u.username]?{...u,role:rolesOverride[u.username]}:u);
+        setUR(fuWithRoles);setOR(fo);setPR(fp);setVR(fv);
         if(!Array.isArray(u)||!u.length)fb.set("users",fu);
         if(!Array.isArray(o)||!o.length)fb.set("obras",fo);
         if(!Array.isArray(p))fb.set("partes",fp);
@@ -366,7 +376,13 @@ function Equipo({users,sU}){
     setN("");setU("");setP("");setE("");setOk((rol==="capataz"?"Encargado":"Trabajador")+" anadido");
     setTimeout(()=>setOk(""),3000);
   };
-  const toggle=user=>sU((users||[]).map(x=>x.username===user.username?{...x,role:x.role==="capataz"?"worker":"capataz"}:x));
+  const toggle=user=>{
+    const updated=(users||[]).map(x=>x.username===user.username?{...x,role:x.role==="capataz"?"worker":"capataz"}:x);
+    // Save roles override to localStorage as backup
+    const roles={};updated.forEach(u=>{roles[u.username]=u.role;});
+    ls.s("roles_override",roles);
+    sU(updated);
+  };
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:800}}>
     <h2 class="pt">Equipo</h2>
     <div class="cd">
