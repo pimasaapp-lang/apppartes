@@ -128,10 +128,10 @@ function App(){
     (async()=>{
       try{
         const[u,o,p,v]=await Promise.all([fb.get("users"),fb.get("obras"),fb.get("partes"),fb.get("vehiculos")]);
-        // Firebase returns objects {0:{...},1:{...}} not arrays - convert properly
+        // Convert Firebase objects to arrays properly
         const toArr=x=>{
           if(!x)return [];
-          if(Array.isArray(x))return x;
+          if(Array.isArray(x))return x.filter(v=>v&&typeof v==="object");
           if(typeof x==="object")return Object.values(x).filter(v=>v&&typeof v==="object");
           return [];
         };
@@ -163,9 +163,25 @@ function App(){
       setLoading(false);
     })();
   },[]);
-  const sU=useCallback(async v=>{setUR(v);ls.s("users",v);await fb.set("users",v);},[]);
-  const sO=useCallback(async v=>{setOR(v);await fb.set("obras",v);},[]);
-  const sP=useCallback(async v=>{setPR(v);await fb.set("partes",v);},[]);
+  const sU=useCallback(async v=>{
+    setUR(v);
+    ls.s("users",v);
+    // Save as object keyed by username - avoids Firebase array corruption
+    const obj={};v.forEach(u=>{if(u&&u.username)obj[u.username]=u;});
+    await fb.set("users",obj);
+  },[]);
+  const sO=useCallback(async v=>{
+    setOR(v);
+    ls.s("obras",v);
+    const obj={};v.forEach((o,i)=>{if(o&&o.code)obj[o.code]=o;else obj[i]=o;});
+    await fb.set("obras",obj);
+  },[]);
+  const sP=useCallback(async v=>{
+    setPR(v);
+    ls.s("partes",v);
+    const obj={};v.forEach(p=>{if(p&&p.id)obj[String(p.id).replace('.','_')]=p;});
+    await fb.set("partes",obj);
+  },[]);
   const sV=useCallback(async v=>{
     setVR(v);
     ls.s("vehiculos",v);
