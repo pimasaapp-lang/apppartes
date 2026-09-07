@@ -279,7 +279,7 @@ function Admin({sess,obras,sO,partes,sP,page,setPage,logout,users,sU,vehiculos,s
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${true}>
     ${page==="dash"&&html2`<${Dash} partes=${partes} obras=${obras} users=${users}/>`}
     ${page==="obras"&&html2`<${Obras} obras=${obras} sO=${sO}/>`}
-    ${page==="partes"&&html2`<${TodosPartes} partes=${partes} obras=${obras} users=${users} sP=${sP}/>`}
+    ${page==="partes"&&html2`<${TodosPartes} partes=${partes} obras=${obras} users=${users} sP=${sP} vehiculos=${vehiculos}/>`}
     ${page==="equipo"&&html2`<${Equipo} users=${users} sU=${sU}/>`}
     ${page==="excel"&&html2`<${Excel} partes=${partes} obras=${obras} users=${users}/>`}
     ${page==="vehiculos"&&html2`<${Vehiculos} vehiculos=${vehiculos} sV=${sV}/>`}
@@ -299,7 +299,7 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   );
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
-    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess}/>`}
+    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
     ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
   </${Layout}>`;
 }
@@ -539,7 +539,7 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
   const [date,setDate]=useState(hoy);
   const [ents,setEnts]=useState([eVacio(obras)]);
   const primeraObra=ao[0];
-  const [vehiculo,setVehiculo]=useState("");
+  const [vehiculos2,setVehiculos2]=useState([]);
   const [ok,setOk]=useState(false);const [err,setErr]=useState("");
   const upd=(i,f,v)=>{
     let e=[...ents];e[i]={...e[i],[f]:v};
@@ -561,8 +561,8 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
       if(!e.horaEntrada||!e.horaSalida){setErr("Introduce hora entrada y salida");return;}
       if(e.totalHoras<=0){setErr("Hora salida debe ser posterior a entrada");return;}
     }
-    sP([...(partes||[]),{date,worker:workerEfectivo,entries:ents,vehiculo:vehiculo,id:Date.now(),creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined}]);
-    setOk(true);setEnts([eVacio(obras)]);setVehiculo("");setParaWorker("propio");
+    sP([...(partes||[]),{date,worker:workerEfectivo,entries:ents,vehiculos:vehiculos2,id:Date.now(),creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined}]);
+    setOk(true);setEnts([eVacio(obras)]);setVehiculos2([]);setParaWorker("propio");
     setTimeout(()=>setOk(false),3000);
   };
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
@@ -630,11 +630,19 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
             </div>`)}
         </div>
       </div>`)}
-      <div class="fg" style=${{marginTop:8}}>
-        <label class="lb">Vehiculo (opcional)</label>
-        <select class="fi" value=${vehiculo} onChange=${e=>setVehiculo(e.target.value)}>
-          <option value="">Sin vehiculo</option>
-          ${av.map(v=>html2`<option key=${v.matricula} value=${v.matricula}>${v.matricula}${v.descripcion?" - "+v.descripcion:""}</option>`)}
+      <div style=${{marginTop:8,marginBottom:12}}>
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <label class="lb" style=${{marginBottom:0}}>Vehiculos (opcional)</label>
+        </div>
+        ${vehiculos2.length>0&&html2`<div style=${{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+          ${vehiculos2.map((mat,i)=>html2`<span key=${i} style=${{display:"flex",alignItems:"center",gap:5,background:"#e0f2fe",color:"#0369a1",padding:"4px 10px",borderRadius:20,fontSize:13,fontWeight:600}}>
+            ${mat}
+            <button onClick=${()=>setVehiculos2(vehiculos2.filter((_,j)=>j!==i))} style=${{border:"none",background:"transparent",color:"#0369a1",cursor:"pointer",fontSize:14,lineHeight:1,padding:0}}>x</button>
+          </span>`)}
+        </div>`}
+        <select class="fi" value="" onChange=${e=>{if(e.target.value&&!vehiculos2.includes(e.target.value))setVehiculos2([...vehiculos2,e.target.value]);e.target.value="";}}>
+          <option value="">+ Anadir vehiculo...</option>
+          ${av.filter(v=>!vehiculos2.includes(v.matricula)).map(v=>html2`<option key=${v.matricula} value=${v.matricula}>${v.matricula}${v.descripcion?" - "+v.descripcion:""}</option>`)}
         </select>
       </div>
       ${err&&html2`<p class="er">${err}</p>`}
@@ -644,11 +652,12 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
   </div>`;
 }
 
-function ModalEditParte({parte,obras,onClose,onSave}){
+function ModalEditParte({parte,obras,onClose,onSave,vehiculos}){
   const ao=(obras||[]).filter(o=>o.active);
   const [date,setDate]=useState(parte.date);
   const [ents,setEnts]=useState((parte.entries||[]).map(e=>({...e})));
   const [obs,setObs]=useState(parte.observaciones||"");
+  const [vehs,setVehs]=useState(Array.isArray(parte.vehiculos)?parte.vehiculos:parte.vehiculo?[parte.vehiculo]:[]);
   const [err,setErr]=useState("");
 
   const upd=(i,f,v)=>{
@@ -672,7 +681,7 @@ function ModalEditParte({parte,obras,onClose,onSave}){
       if(!e.horaEntrada||!e.horaSalida){setErr("Introduce hora entrada y salida");return;}
       if(e.totalHoras<=0){setErr("Hora salida debe ser posterior a entrada");return;}
     }
-    onSave({...parte,date,entries:ents});
+    onSave({...parte,date,entries:ents,vehiculos:vehs});
   };
 
   return html2`<div class="mb" onClick=${e=>{if(e.target===e.currentTarget)onClose();}}>
@@ -730,6 +739,20 @@ function ModalEditParte({parte,obras,onClose,onSave}){
             </div>`)}
         </div>
       </div>`)}
+      <div style=${{marginTop:12,marginBottom:4}}>
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <label class="lb" style=${{marginBottom:0}}>Vehiculos (opcional)</label>
+        </div>
+        ${vehs.length>0&&html2`<div style=${{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+          ${vehs.map((mat,i)=>html2`<span key=${i} style=${{display:"flex",alignItems:"center",gap:5,background:"#e0f2fe",color:"#0369a1",padding:"4px 10px",borderRadius:20,fontSize:13,fontWeight:600}}>
+            ${mat}<button onClick=${()=>setVehs(vehs.filter((_,j)=>j!==i))} style=${{border:"none",background:"transparent",color:"#0369a1",cursor:"pointer",fontSize:14,padding:0}}>x</button>
+          </span>`)}
+        </div>`}
+        <select class="fi" value="" onChange=${e=>{if(e.target.value&&!vehs.includes(e.target.value))setVehs([...vehs,e.target.value]);e.target.value="";}}>
+          <option value="">+ Anadir vehiculo...</option>
+          ${(vehiculos||[]).filter(v=>v.activo&&!vehs.includes(v.matricula)).map(v=>html2`<option key=${v.matricula} value=${v.matricula}>${v.matricula}${v.descripcion?" - "+v.descripcion:""}</option>`)}
+        </select>
+      </div>
       ${err&&html2`<p class="er">${err}</p>`}
       <div style=${{display:"flex",gap:10,marginTop:16}}>
         <button class="bs" style=${{flex:1,padding:13}} onClick=${onClose}>Cancelar</button>
@@ -740,7 +763,7 @@ function ModalEditParte({parte,obras,onClose,onSave}){
 }
 
 
-function ParteCard({p,obras,users,onDelete,onCopy,onEdit}){
+function ParteCard({p,obras,users,onDelete,onCopy,onEdit,vehiculos}){
   const [copyM,setCopyM]=useState(false);
   const [pdfM,setPdfM]=useState(false);
   const [editM,setEditM]=useState(false);
@@ -780,7 +803,9 @@ function ParteCard({p,obras,users,onDelete,onCopy,onEdit}){
             ${e.guardia&&html2`<span class="bg2" style=${{background:"#ede9fe",color:"#6d28d9"}}>Guardia</span>`}
       </div>`;
     })}
-    ${p.vehiculo&&html2`<div style=${{marginTop:6,padding:"6px 10px",background:"#f0f9ff",borderRadius:8,fontSize:12,color:"#0369a1",display:"flex",alignItems:"center",gap:6}}><b>Matricula:</b> ${p.vehiculo}</div>`}
+    ${((p.vehiculos&&p.vehiculos.length)||(p.vehiculo))&&html2`<div style=${{marginTop:6,padding:"6px 10px",background:"#f0f9ff",borderRadius:8,fontSize:12,color:"#0369a1",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+      <b>Matricula:</b> ${p.vehiculos&&p.vehiculos.length?p.vehiculos.join(", "):p.vehiculo}
+    </div>`}
     ${((Array.isArray(p.participantes)?p.participantes:Object.values(p.participantes||{})).filter(x=>x&&x.worker)).length>0&&html2`<div style=${{marginTop:6,padding:"7px 10px",background:"#f0fdf4",borderRadius:8,fontSize:12,color:"#15803d"}}><b>Trabajadores:</b> ${(Array.isArray(p.participantes)?p.participantes:Object.values(p.participantes||{})).filter(x=>x&&x.worker).map(par=>{const w2=(users||[]).find(u=>u.username===par.worker);return w2?w2.name:par.worker;}).join(", ")}</div>`}
     ${p.observaciones&&html2`<div style=${{marginTop:6,padding:"7px 10px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#6b7280"}}><b>Obs:</b> ${p.observaciones}</div>`}
     ${(p.entries||[]).some(e=>e.observaciones)&&(p.entries||[]).map((e,i)=>e.observaciones?html2`<div key=${i} style=${{marginTop:4,padding:"5px 10px",background:"#f8fafc",borderRadius:8,fontSize:12,color:"#6b7280"}}><span class="ct" style=${{fontSize:10,marginRight:6}}>${e.obra}</span>${e.observaciones}</div>`:null)}
@@ -797,7 +822,7 @@ function ParteCard({p,obras,users,onDelete,onCopy,onEdit}){
     </div>`}
     ${copyM&&html2`<${CopyModal} parte=${p} onClose=${()=>setCopyM(false)} onCopy=${onCopy}/>`}
     ${pdfM&&html2`<${ModalFirmas} parte=${p} obras=${obras} users=${users} onClose=${()=>setPdfM(false)}/>`}
-    ${editM&&onEdit&&html2`<${ModalEditParte} parte=${p} obras=${obras} onClose=${()=>setEditM(false)} onSave=${(updated)=>{onEdit(updated);setEditM(false);}}/>`}
+    ${editM&&onEdit&&html2`<${ModalEditParte} parte=${p} obras=${obras} vehiculos=${vehiculos} onClose=${()=>setEditM(false)} onSave=${(updated)=>{onEdit(updated);setEditM(false);}}/>`}
   </div>`;
 }
 
@@ -847,7 +872,7 @@ function CopyModal({parte,onClose,onCopy}){
   </div>`;
 }
 
-function MisPartes({partes,obras,sP,allP,users,sess}){
+function MisPartes({partes,obras,sP,allP,users,sess,vehiculos}){
   const sorted=[...partes].sort((a,b)=>b.date.localeCompare(a.date));
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Mis Partes</h2>
@@ -864,7 +889,7 @@ function MisPartes({partes,obras,sP,allP,users,sess}){
           ${esDeCapataz&&html2`<div style=${{background:"#f0f9ff",borderRadius:8,padding:"5px 10px",marginBottom:4,fontSize:12,color:"#0369a1",fontWeight:600}}>
             Parte creado por encargado
           </div>`}
-          <${ParteCard} p=${parteVista} obras=${obras} users=${users}
+          <${ParteCard} p=${parteVista} obras=${obras} users=${users} vehiculos=${vehiculos}
             onDelete=${esDeCapataz?null:id=>sP((allP||[]).filter(x=>x.id!==id))}
             onCopy=${esDeCapataz?null:fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
             onEdit=${esDeCapataz?null:updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}
@@ -1001,7 +1026,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
     ${modal?.type==="add"&&html2`<${ModalAnadirTrabajador} parte=${modal.parte} users=${users} obras=${obras}
       onClose=${()=>setModal(null)}
       onSave=${(updated)=>{onSaveParte(updated);setModal(null);}}/>`}
-    ${modal?.type==="edit"&&html2`<${ModalEditParte} parte=${modal.parte} obras=${obras}
+    ${modal?.type==="edit"&&html2`<${ModalEditParte} parte=${modal.parte} obras=${obras} vehiculos=${vehiculos}
       onClose=${()=>setModal(null)}
       onSave=${(updated)=>{onSaveParte(updated);setModal(null);}}/>`}
     ${modal?.type==="pdf"&&html2`<${ModalFirmas} parte=${modal.parte} obras=${obras} users=${users}
@@ -1012,7 +1037,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
   </div>`;
 }
 
-function TodosPartes({partes,obras,users,sP}){
+function TodosPartes({partes,obras,users,sP,vehiculos}){
   const [fw,setFw]=useState("");const [fo,setFo]=useState("");const [fd,setFd]=useState("");const [ft,setFt]=useState("");
   const ws=(users||[]).filter(u=>u.role==="worker"||u.role==="capataz");
   const fl=[...(partes||[])].sort((a,b)=>b.date.localeCompare(a.date)).filter(p=>{
@@ -1034,7 +1059,7 @@ function TodosPartes({partes,obras,users,sP}){
       <button class="bs" onClick=${()=>{setFw("");setFo("");setFd("");setFt("");}}>Limpiar</button>
     </div>
     ${fl.length===0?html2`<div class="cd"><p class="em">Sin partes</p></div>`:
-      fl.map(p=>html2`<${ParteCard} key=${p.id} p=${p} obras=${obras} users=${users}
+      fl.map(p=>html2`<${ParteCard} key=${p.id} p=${p} obras=${obras} users=${users} vehiculos=${vehiculos}
         onDelete=${id=>sP((partes||[]).filter(x=>x.id!==id))}
         onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(partes||[]),...n]);}}
         onEdit=${updated=>sP((partes||[]).map(x=>x.id===updated.id?updated:x))}
@@ -1056,7 +1081,7 @@ function Excel({partes,obras,users}){
     if(!window.XLSX){alert("Espera");return;}
     const wb=window.XLSX.utils.book_new();
     const det=[["Trabajador","Fecha","Codigo","Obra","Entrada","Salida","H.Ord","H.Extra","H.Noc","Km","Dieta","1/2Dieta","Canasto","Guardia","Vehiculo","Observaciones","Materiales","Unidades"]];
-    fl.forEach(p=>{const w=ws.find(u=>u.username===p.worker);(p.entries||[]).forEach(e=>{const o=(obras||[]).find(ob=>ob.code===e.obra);const[y,m,d]=p.date.split("-");det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,p.vehiculo||"",e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);});});
+    fl.forEach(p=>{const w=ws.find(u=>u.username===p.worker);(p.entries||[]).forEach(e=>{const o=(obras||[]).find(ob=>ob.code===e.obra);const[y,m,d]=p.date.split("-");det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,(p.vehiculos&&p.vehiculos.length?p.vehiculos.join(", "):p.vehiculo||""),e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);});});
     const res=[["Trabajador","H.Ord","H.Extra","H.Noc","Km","Dietas","1/2D","Canastos","Partes"]];
     ws.forEach(w=>{const wp=fl.filter(p=>p.worker===w.username);const we=wp.flatMap(p=>p.entries||[]);if(!we.length)return;res.push([w.name,we.reduce((s,e)=>s+(e.horasOrdinarias||0),0),we.reduce((s,e)=>s+(e.horasExtra||0),0),we.reduce((s,e)=>s+(e.horasNocturnas||0),0),we.reduce((s,e)=>s+(parseFloat(e.km)||0),0),we.reduce((s,e)=>s+(e.dieta?1:0),0),we.reduce((s,e)=>s+(e.mediaDieta?1:0),0),we.reduce((s,e)=>s+(e.canasto?1:0),0),wp.length]);});
     const s1=window.XLSX.utils.aoa_to_sheet(det);s1["!cols"]=det[0].map(()=>({wch:18}));window.XLSX.utils.book_append_sheet(wb,s1,"Detalle");
