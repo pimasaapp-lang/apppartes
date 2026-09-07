@@ -141,7 +141,7 @@ function App(){
         // vehiculos: handle null, 0, {_empty:true} or array
         const _defV=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
         let fv=[];
-        const vArr=Array.isArray(v)?v:(v&&typeof v==="object"&&!v._empty?Object.values(v):[]);
+        const vArr=Array.isArray(v)?v.filter(x=>x&&x.matricula):(v&&typeof v==="object"&&!v._empty?Object.values(v).filter(x=>x&&x.matricula):[]);
         if(vArr.length)fv=fixUnicode(vArr);
         else fv=ls.g("vehiculos",_defV);
         // Apply stored roles override (protects capataz assignments from Firebase resets)
@@ -185,17 +185,9 @@ function App(){
   const sV=useCallback(async v=>{
     setVR(v);
     ls.s("vehiculos",v);
-    const payload=v&&v.length?v:{"_empty":true};
-    const r=await fetch(FB_URL+"/vehiculos.json",{
-      method:"PUT",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-    if(!r.ok){
-      const txt=await r.text();
-      throw new Error("Firebase error "+r.status+": "+txt);
-    }
-    return true;
+    // Save as object keyed by matricula - avoids Firebase array corruption
+    const obj={};v.forEach(vh=>{if(vh&&vh.matricula)obj[vh.matricula.replace(/[.#$/[\]]/g,"_")]=vh;});
+    await fb.set("vehiculos",Object.keys(obj).length?obj:{"_empty":true});
   },[]);
   const login=(u,p)=>{
     const usr=(users||[]).find(x=>x.username===u&&x.password===p);
