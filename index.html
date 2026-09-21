@@ -181,7 +181,18 @@ function App(){
     setPR(v);
     ls.s("partes",v);
     const obj={};v.forEach(p=>{if(p&&p.id)obj[String(p.id).replace('.','_')]=p;});
-    await fb.set("partes",obj);
+    try{
+      const r=await fetch(FB_URL+"/partes.json",{
+        method:"PUT",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(obj)
+      });
+      if(!r.ok)throw new Error("Error "+r.status);
+      return true;
+    }catch(e){
+      console.error("Error guardando partes:",e);
+      return false;
+    }
   },[]);
   const sV=useCallback(async v=>{
     setVR(v);
@@ -537,7 +548,7 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
   const [ents,setEnts]=useState([eVacio(obras)]);
   const primeraObra=ao[0];
   const [vehiculos2,setVehiculos2]=useState([]);
-  const [ok,setOk]=useState(false);const [err,setErr]=useState("");
+  const [ok,setOk]=useState("");const [saving,setSaving]=useState(false);const [err,setErr]=useState("");
   const upd=(i,f,v)=>{
     let e=[...ents];e[i]={...e[i],[f]:v};
     if(f==="horaEntrada"||f==="horaSalida"){
@@ -551,16 +562,23 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
     if(f==="obra"){const ob=(obras||[]).find(o=>o.code===v);if(ob)e[i].observaciones=ob.name;}
     setEnts(e);
   };
-  const sub=()=>{
+  const sub=async()=>{
     setErr("");
     for(const e of ents){
       if(!e.obra){setErr("Selecciona obra");return;}
       if(!e.horaEntrada||!e.horaSalida){setErr("Introduce hora entrada y salida");return;}
       if(e.totalHoras<=0){setErr("Hora salida debe ser posterior a entrada");return;}
     }
-    sP([...(partes||[]),{date,worker:workerEfectivo,entries:ents,vehiculos:vehiculos2,id:Date.now(),creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined}]);
-    setOk(true);setEnts([eVacio(obras)]);setVehiculos2([]);setParaWorker("propio");
-    setTimeout(()=>setOk(false),3000);
+    setSaving(true);setErr("");
+    const nuevoParte={date,worker:workerEfectivo,entries:ents,vehiculos:vehiculos2,id:Date.now(),creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined};
+    const ok2=await sP([...(partes||[]),nuevoParte]);
+    setSaving(false);
+    if(ok2){
+      setOk("guardado");setEnts([eVacio(obras)]);setVehiculos2([]);setParaWorker("propio");
+      setTimeout(()=>setOk(""),4000);
+    }else{
+      setErr("Error al conectar con el servidor. El parte se ha guardado localmente pero puede que no se haya sincronizado. Intentalo de nuevo.");
+    }
   };
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Nuevo Parte</h2>
@@ -644,8 +662,14 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
         </select>
       </div>
       ${err&&html2`<p class="er">${err}</p>`}
-      ${ok&&html2`<p class="ok">${esCapataz&&paraWorker!=="propio"?"Parte guardado para "+((users||[]).find(u=>u.username===paraWorker)||{}).name:"Parte guardado correctamente"}</p>`}
-      <button class="bp" style=${{width:"100%",padding:14,fontSize:15,marginTop:8}} onClick=${sub}>Guardar parte</button>
+      ${saving&&html2`<p style=${{color:"#0369a1",fontSize:13,background:"#e0f2fe",padding:"9px 13px",borderRadius:8,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+      <span style=${{display:"inline-block",width:14,height:14,border:"2px solid #0369a1",borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
+      Guardando en la base de datos...
+    </p>`}
+    ${ok==="guardado"&&html2`<p class="ok" style=${{display:"flex",alignItems:"center",gap:8}}>
+      ✓ Parte guardado correctamente en la base de datos
+    </p>`}
+      <button class="bp" style=${{width:"100%",padding:14,fontSize:15,marginTop:8,opacity:saving?0.6:1}} onClick=${sub} disabled=${saving}>${saving?"Guardando...":"Guardar parte"}</button>
     </div>
   </div>`;
 }
@@ -1036,8 +1060,219 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
   </div>`;
 }
 
+function ModalPDFSemanal({partes,obras,users,onClose}){
+  const [obra,setObra]=useState("");
+  const [desde,setDesde]=useState("");
+  const [hasta,setHasta]=useState("");
+  const [sigT,setSigT]=useState(null);
+  const [sigC,setSigC]=useState(null);
+  const [cliente,setCliente]=useState({nombre:"",direccion:"",telefono:""});
+  const [step,setStep]=useState(1);
+  const [err,setErr]=useState("");
+
+  const ao=(obras||[]).filter(o=>o.active);
+
+  // Get all partes for selected obra and date range
+  const toArrR=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
+  const partesObra=(partes||[]).filter(p=>{
+    if(!p||!p.date)return false;
+    if(desde&&p.date<desde)return false;
+    if(hasta&&p.date>hasta)return false;
+    const ents=p.entries||[];
+    const partsEnt=toArrR(p.participantes).flatMap(par=>par.entries||[]);
+    return [...ents,...partsEnt].some(e=>e.obra===obra);
+  });
+
+  const generarPDFSemanal=()=>{
+    if(!obra){setErr("Selecciona una obra");return;}
+    if(!desde||!hasta){setErr("Selecciona fecha inicio y fin");return;}
+    if(partesObra.length===0){setErr("No hay partes para esa obra y periodo");return;}
+
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+    const W=210,mg=15;let y=mg;
+
+    // Header
+    try{doc.addImage(LOGO,"PNG",mg,y,40,18,undefined,"FAST");}catch(e){}
+    doc.setFontSize(8);doc.setTextColor(100);
+    doc.text("PROYECTOS INSTALACIONES Y MANTENIMIENTOS ANDALUCES SA",W-mg,y+4,{align:"right"});
+    y+=22;
+    doc.setDrawColor(26,58,92);doc.setLineWidth(0.8);doc.line(mg,y,W-mg,y);y+=6;
+    doc.setFontSize(15);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("PARTE SEMANAL DE TRABAJO",W/2,y,{align:"center"});y+=8;
+    doc.setFontSize(9);doc.setTextColor(80);doc.setFont(undefined,"normal");
+    doc.text("Periodo: "+fmt(desde)+" - "+fmt(hasta),W/2,y,{align:"center"});y+=10;
+
+    // Cliente / Obra boxes
+    const obraObj=(obras||[]).find(o=>o.code===obra);
+    const col2=W/2+2;const boxH=28;
+    doc.setFillColor(255,252,235);doc.setDrawColor(230,210,150);
+    doc.roundedRect(mg,y,(W-mg*2)/2-2,boxH,2,2,"FD");
+    doc.setFontSize(8);doc.setTextColor(130,80,0);doc.setFont(undefined,"bold");
+    doc.text("CLIENTE",mg+4,y+6);
+    doc.setFont(undefined,"normal");doc.setTextColor(50);
+    if(cliente.nombre)doc.text(cliente.nombre,mg+4,y+12);
+    if(cliente.direccion)doc.text(cliente.direccion,mg+4,y+18);
+    if(cliente.telefono)doc.text("Tel: "+cliente.telefono,mg+4,y+24);
+    doc.setFillColor(240,245,255);doc.setDrawColor(200,210,230);
+    doc.roundedRect(col2,y,(W-mg*2)/2-2,boxH,2,2,"FD");
+    doc.setFontSize(8);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("OBRA",col2+4,y+6);
+    doc.setFont(undefined,"normal");doc.setTextColor(50);
+    const obraLabel=obraObj?obra+" - "+obraObj.name:obra;
+    const obraLines=doc.splitTextToSize(obraLabel,(W-mg*2)/2-10);
+    doc.text(obraLines,col2+4,y+12);
+    y+=boxH+8;
+
+    // Table headers
+    doc.setFontSize(9);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("DETALLE DE TRABAJOS",mg,y);y+=5;
+    const cols=[38,22,16,14,14,14,12,8,8,8,8];
+    const heads=["Trabajador","Fecha","Horario","H.Ord","H.Ext","H.Noc","Km","D","1/2D","C","G"];
+    let cx=mg;const cX=[];cols.forEach(c=>{cX.push(cx);cx+=c;});
+    doc.setFillColor(26,58,92);doc.setTextColor(255);
+    doc.rect(mg,y,W-mg*2,7,"F");
+    doc.setFontSize(7);doc.setFont(undefined,"bold");
+    heads.forEach((h,i)=>{doc.text(h,cX[i]+1,y+5);});y+=7;
+
+    let totHO=0,totHE=0,totHN=0,totKm=0,totD=0,totMD=0,totC=0,totG=0;
+    let row=0;
+    doc.setTextColor(30);doc.setFont(undefined,"normal");doc.setFontSize(7);
+
+    // Sort partes by date
+    const sorted=[...partesObra].sort((a,b)=>a.date.localeCompare(b.date));
+
+    sorted.forEach(p=>{
+      // Build list of workers for this parte
+      const allW=[];
+      if(p.worker){
+        const u=(users||[]).find(u=>u.username===p.worker);
+        const ents=(p.entries||[]).filter(e=>e.obra===obra);
+        if(ents.length)allW.push({name:u?u.name:p.worker,entries:ents});
+      }
+      toArrR(p.participantes).forEach(par=>{
+        const u=(users||[]).find(u=>u.username===par.worker);
+        const ents=(par.entries||[]).filter(e=>e.obra===obra);
+        if(ents.length)allW.push({name:u?u.name:par.worker,entries:ents});
+      });
+
+      allW.forEach(({name,entries})=>{
+        const hO=entries.reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+        const hE=entries.reduce((s,e)=>s+(e.horasExtra||0),0);
+        const hN=entries.reduce((s,e)=>s+(e.horasNocturnas||0),0);
+        const km=entries.reduce((s,e)=>s+(parseFloat(e.km)||0),0);
+        const d=entries.some(e=>e.dieta);
+        const md=entries.some(e=>e.mediaDieta);
+        const c=entries.some(e=>e.canasto);
+        const g=entries.some(e=>e.guardia);
+        const horario=entries[0]&&entries[0].horaEntrada?entries[0].horaEntrada+"-"+entries[entries.length-1].horaSalida:"-";
+        if(row%2===0){doc.setFillColor(248,250,252);doc.rect(mg,y,W-mg*2,7,"F");}
+        doc.text(name.substring(0,22),cX[0]+1,y+5);
+        doc.text(fmt(p.date),cX[1]+1,y+5);
+        doc.text(horario,cX[2]+1,y+5);
+        doc.text(String(hO),cX[3]+1,y+5);
+        doc.text(hE>0?String(hE):"-",cX[4]+1,y+5);
+        doc.text(hN>0?String(hN.toFixed(1)):"-",cX[5]+1,y+5);
+        doc.text(km>0?String(km.toFixed(0)):"-",cX[6]+1,y+5);
+        doc.text(d?"Si":"-",cX[7]+1,y+5);
+        doc.text(md?"Si":"-",cX[8]+1,y+5);
+        doc.text(c?"Si":"-",cX[9]+1,y+5);
+        doc.text(g?"Si":"-",cX[10]+1,y+5);
+        totHO+=hO;totHE+=hE;totHN+=hN;totKm+=km;
+        if(d)totD++;if(md)totMD++;if(c)totC++;if(g)totG++;
+        y+=7;doc.setDrawColor(230);doc.line(mg,y,W-mg,y);row++;
+        if(y>260){doc.addPage();y=mg;}
+      });
+    });
+
+    // Totals row
+    doc.setFillColor(26,58,92);doc.setTextColor(255);doc.setFont(undefined,"bold");
+    doc.rect(mg,y,W-mg*2,7,"F");
+    doc.text("TOTALES",cX[0]+1,y+5);
+    doc.text(String(totHO),cX[3]+1,y+5);
+    doc.text(totHE>0?String(totHE):"-",cX[4]+1,y+5);
+    doc.text(totHN>0?String(totHN.toFixed(1)):"-",cX[5]+1,y+5);
+    doc.text(totKm>0?String(totKm.toFixed(0)):"-",cX[6]+1,y+5);
+    doc.text(String(totD),cX[7]+1,y+5);
+    doc.text(String(totMD),cX[8]+1,y+5);
+    doc.text(String(totC),cX[9]+1,y+5);
+    doc.text(String(totG),cX[10]+1,y+5);
+    y+=12;
+
+    // Signatures
+    if(y>220){doc.addPage();y=mg;}
+    doc.setDrawColor(26,58,92);doc.setLineWidth(0.4);doc.line(mg,y,W-mg,y);y+=6;
+    doc.setFontSize(10);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("FIRMAS",W/2,y,{align:"center"});y+=8;
+    const sigW=(W-mg*2)/2-5;const sigH=35;const sig2x=mg+sigW+10;
+    doc.setDrawColor(180);doc.setLineWidth(0.3);
+    doc.roundedRect(mg,y,sigW,sigH,2,2);
+    doc.setFontSize(7.5);doc.setTextColor(26,58,92);doc.setFont(undefined,"bold");
+    doc.text("FIRMA PIMASA",mg+sigW/2,y+5,{align:"center"});
+    if(sigT){try{doc.addImage(sigT,"PNG",mg+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
+    doc.roundedRect(sig2x,y,sigW,sigH,2,2);
+    doc.setTextColor(130,80,0);doc.text("FIRMA DEL CLIENTE",sig2x+sigW/2,y+5,{align:"center"});
+    if(sigC){try{doc.addImage(sigC,"PNG",sig2x+4,y+7,sigW-8,sigH-12,undefined,"FAST");}catch(e){}}
+    doc.setFont(undefined,"normal");doc.setFontSize(7);doc.setTextColor(100);
+    doc.text((cliente.nombre||"Cliente").substring(0,30),sig2x+sigW/2,y+sigH-3,{align:"center"});
+    y+=sigH+6;
+    doc.setFontSize(7);doc.setTextColor(120);
+    doc.text("Documento generado - GestionObras Pro | PROYECTOS INSTALACIONES Y MANTENIMIENTOS ANDALUCES SA",W/2,y,{align:"center"});
+    doc.save("parte_semanal_"+obra+"_"+desde+"_"+hasta+".pdf");
+  };
+
+  return html2`<div class="mb" onClick=${e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div class="md" style=${{maxWidth:600}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <h2 style=${{fontSize:17,fontWeight:800,color:"#1a3a5c"}}>PDF Semanal por Obra</h2>
+        <button onClick=${onClose} style=${{border:"none",background:"#f1f5f9",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16}}>X</button>
+      </div>
+      <div style=${{display:"flex",gap:8,marginBottom:20}}>${[1,2,3].map(s=>html2`<div key=${s} style=${{flex:1,height:4,borderRadius:4,background:step>=s?"#1a3a5c":"#e2e8f0"}}/>`)}</div>
+
+      ${step===1&&html2`<div>
+        <div class="fg"><label class="lb">Obra</label>
+          <${ObraBuscador} obras=${obras} value=${obra} onChange=${v=>setObra(v)}/>
+        </div>
+        <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div class="fg"><label class="lb">Desde</label><input class="fi" type="date" value=${desde} onInput=${e=>setDesde(e.target.value)}/></div>
+          <div class="fg"><label class="lb">Hasta</label><input class="fi" type="date" value=${hasta} onInput=${e=>setHasta(e.target.value)}/></div>
+        </div>
+        ${obra&&desde&&hasta&&html2`<div style=${{padding:"10px 14px",background:partesObra.length?"#f0fdf4":"#fef2f2",borderRadius:8,fontSize:13,fontWeight:600,color:partesObra.length?"#15803d":"#dc2626"}}>
+          ${partesObra.length?partesObra.length+" partes encontrados":"Sin partes para esa obra y periodo"}
+        </div>`}
+        ${err&&html2`<p class="er">${err}</p>`}
+        <div style=${{display:"flex",gap:10,marginTop:16}}>
+          <button class="bs" style=${{flex:1,padding:13}} onClick=${onClose}>Cancelar</button>
+          <button class="bp" style=${{flex:2,padding:13}} onClick=${()=>{if(!obra||!desde||!hasta){setErr("Completa todos los campos");return;}if(!partesObra.length){setErr("No hay partes para esa obra y periodo");return;}setErr("");setStep(2);}}>Siguiente</button>
+        </div>
+      </div>`}
+
+      ${step===2&&html2`<div>
+        <div class="fg"><label class="lb">Nombre cliente</label><input class="fi" value=${cliente.nombre} onInput=${e=>setCliente({...cliente,nombre:e.target.value})} placeholder="Nombre del cliente"/></div>
+        <div class="fg"><label class="lb">Direccion</label><input class="fi" value=${cliente.direccion} onInput=${e=>setCliente({...cliente,direccion:e.target.value})} placeholder="Calle, numero, ciudad"/></div>
+        <div class="fg"><label class="lb">Telefono</label><input class="fi" type="tel" value=${cliente.telefono} onInput=${e=>setCliente({...cliente,telefono:e.target.value})} placeholder="000 000 000"/></div>
+        <div style=${{display:"flex",gap:10,marginTop:16}}>
+          <button class="bs" style=${{flex:1,padding:13}} onClick=${()=>setStep(1)}>Volver</button>
+          <button class="bp" style=${{flex:2,padding:13}} onClick=${()=>setStep(3)}>Siguiente: Firmas</button>
+        </div>
+      </div>`}
+
+      ${step===3&&html2`<div>
+        <div style=${{marginBottom:20}}><label class="lb" style=${{marginBottom:10,display:"block"}}>Firma PIMASA</label><${SignaturePad} label="Firme aqui" onSign=${setSigT} signed=${!!sigT}/></div>
+        <div style=${{marginBottom:20}}><label class="lb" style=${{marginBottom:10,display:"block"}}>Firma del cliente</label><${SignaturePad} label="Firme aqui" onSign=${setSigC} signed=${!!sigC}/></div>
+        <div style=${{display:"flex",gap:10,marginTop:8}}>
+          <button class="bs" style=${{flex:1,padding:12}} onClick=${()=>setStep(2)}>Volver</button>
+          <button class="bp" style=${{flex:2,padding:12}} onClick=${generarPDFSemanal}>Generar PDF</button>
+        </div>
+      </div>`}
+    </div>
+  </div>`;
+}
+
+
 function TodosPartes({partes,obras,users,sP,vehiculos}){
   const [fw,setFw]=useState("");const [fo,setFo]=useState("");const [fd,setFd]=useState("");const [ft,setFt]=useState("");
+  const [pdfModal,setPdfModal]=useState(false);
   const ws=(users||[]).filter(u=>u.role==="worker"||u.role==="capataz");
   const fl=[...(partes||[])].sort((a,b)=>b.date.localeCompare(a.date)).filter(p=>{
     if(fw&&p.worker!==fw)return false;
@@ -1056,6 +1291,7 @@ function TodosPartes({partes,obras,users,sP,vehiculos}){
         <div class="fg" style=${{marginBottom:0}}><label class="lb">Hasta</label><input class="fi" type="date" value=${ft} onInput=${e=>setFt(e.target.value)}/></div>
       </div>
       <button class="bs" onClick=${()=>{setFw("");setFo("");setFd("");setFt("");}}>Limpiar</button>
+      <button class="bp" style=${{background:"#065f46",marginTop:0}} onClick=${()=>setPdfModal(true)}>PDF Semanal por Obra</button>
     </div>
     ${fl.length===0?html2`<div class="cd"><p class="em">Sin partes</p></div>`:
       fl.map(p=>html2`<${ParteCard} key=${p.id} p=${p} obras=${obras} users=${users} vehiculos=${vehiculos}
@@ -1063,6 +1299,7 @@ function TodosPartes({partes,obras,users,sP,vehiculos}){
         onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(partes||[]),...n]);}}
         onEdit=${updated=>sP((partes||[]).map(x=>x.id===updated.id?updated:x))}
       />`)}
+  ${pdfModal&&html2`<${ModalPDFSemanal} partes=${partes} obras=${obras} users=${users} onClose=${()=>setPdfModal(false)}/>`}
   </div>`;
 }
 
