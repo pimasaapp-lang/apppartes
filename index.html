@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+<!DOCTYPE
+            const parteVs2=Array.isArray(parte.vehiculos)?parte.vehiculos:(parte.vehiculo?[parte.vehiculo]:[]); html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
@@ -282,6 +283,7 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   const lks=[
     {id:"nuevo",label:"Nuevo",i:"M12 5v14M5 12h14"},
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
+    {id:"resumen",label:"Resumen",i:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"},
     {id:"cuenta",label:"Mi Cuenta",i:"M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"},
   ];
   const toArrP=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
@@ -292,6 +294,7 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
     ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
+    ${page==="resumen"&&html2`<${ResumenMensual} sess=${sess} partes=${partes}/>`}
     ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
   </${Layout}>`;
 }
@@ -300,12 +303,14 @@ function Capataz({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   const lks=[
     {id:"nuevo",label:"Nuevo",i:"M12 5v14M5 12h14"},
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
+    {id:"resumen",label:"Resumen",i:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"},
     {id:"cuenta",label:"Mi Cuenta",i:"M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"},
   ];
   const myP=(partes||[]).filter(p=>p.worker===sess.username||p.creadorCapataz===sess.username);
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos}/>`}
-    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess}/>`}
+    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
+    ${page==="resumen"&&html2`<${ResumenMensual} sess=${sess} partes=${partes}/>`}
     ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
   </${Layout}>`;
 }
@@ -634,6 +639,7 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
         </div>`}
         <select class="fi" value="" onChange=${e=>{if(e.target.value&&!vehiculos2.includes(e.target.value))setVehiculos2([...vehiculos2,e.target.value]);e.target.value="";}}>
           <option value="">+ Anadir vehiculo...</option>
+          ${!vehiculos2.includes("PROPIO")&&html2`<option value="PROPIO">PROPIO - Vehiculo personal</option>`}
           ${av.filter(v=>!vehiculos2.includes(v.matricula)).map(v=>html2`<option key=${v.matricula} value=${v.matricula}>${v.matricula}${v.descripcion?" - "+v.descripcion:""}</option>`)}
         </select>
       </div>
@@ -742,6 +748,7 @@ function ModalEditParte({parte,obras,onClose,onSave,vehiculos}){
         </div>`}
         <select class="fi" value="" onChange=${e=>{if(e.target.value&&!vehs.includes(e.target.value))setVehs([...vehs,e.target.value]);e.target.value="";}}>
           <option value="">+ Anadir vehiculo...</option>
+          ${!vehs.includes("PROPIO")&&html2`<option value="PROPIO">PROPIO - Vehiculo personal</option>`}
           ${(vehiculos||[]).filter(v=>v.activo&&!vehs.includes(v.matricula)).map(v=>html2`<option key=${v.matricula} value=${v.matricula}>${v.matricula}${v.descripcion?" - "+v.descripcion:""}</option>`)}
         </select>
       </div>
@@ -891,7 +898,7 @@ function MisPartes({partes,obras,sP,allP,users,sess,vehiculos}){
   </div>`;
 }
 
-function MisPartesCapataz({partes,obras,sP,allP,users,sess}){
+function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
   const [modal,setModal]=useState(null);
   // Partes donde el capataz es creador (parte.worker===sess.username O parte.creadorCapataz===sess.username)
   const toArrP3=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
@@ -1082,7 +1089,8 @@ function Excel({partes,obras,users}){
         (p.entries||[]).forEach(e=>{
           const o=(obras||[]).find(ob=>ob.code===e.obra);
           const[y,m,d]=p.date.split("-");
-          det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
+          const esPropioW=((p.vehiculos&&p.vehiculos.includes("PROPIO"))||(!p.vehiculos&&!p.vehiculo));
+          det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,esPropioW?parseFloat(e.km)||0:0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
         });
       }
       // Participantes entries
@@ -1091,7 +1099,8 @@ function Excel({partes,obras,users}){
         (par.entries||[]).forEach(e=>{
           const o=(obras||[]).find(ob=>ob.code===e.obra);
           const[y,m,d]=p.date.split("-");
-          det.push([pw?pw.name:par.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
+          const esPropioP=((p.vehiculos&&p.vehiculos.includes("PROPIO"))||(!p.vehiculos&&!p.vehiculo));
+          det.push([pw?pw.name:par.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,esPropioP?parseFloat(e.km)||0:0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
         });
       });
     });
@@ -1117,7 +1126,11 @@ function Excel({partes,obras,users}){
     const dias=new Date(year,month,0).getDate();
     const mnames=["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
     const pp=(partes||[]).filter(p=>{const[y,m]=p.date.split("-").map(Number);return y===year&&m===month;});
-    const actWs=ws.filter(w=>pp.some(p=>p.worker===w.username));
+    const toArrNom=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
+    const actWs=ws.filter(w=>pp.some(p=>
+      p.worker===w.username||
+      toArrNom(p.participantes).some(par=>par.worker===w.username)
+    ));
     if(!actWs.length){alert("No hay partes para "+mnames[month]+" "+year);return;}
     const wb=window.XLSX.utils.book_new();
     actWs.forEach(worker=>{
@@ -1141,7 +1154,7 @@ function Excel({partes,obras,users}){
           const parE=(pArr2.find(par=>par.worker===worker.username)||{}).entries||[];
           const allE2=[...ownE,...parE];
           allE2.forEach(en=>{
-            const hO2=en.horasOrdinarias||0,hE2=en.horasExtra||0,hN2=en.horasNocturnas||0,km2=parseFloat(en.km)||0;
+            const hO2=en.horasOrdinarias||0,hE2=en.horasExtra||0,hN2=en.horasNocturnas||0,km2=(parteVs2.includes("PROPIO")||(!parteVs2.length&&!parte.vehiculo))?parseFloat(en.km)||0:0;
             rows.push([wName,fechaStr,hO2||"",hE2||"","","",km2||"",en.mediaDieta?1:"",en.canasto?1:"",en.guardia?1:"",en.dieta?1:"",en.obra||"",parte.observaciones||"",hN2||"","",""]);
             totC+=hO2;totD+=hE2;totG+=km2;if(en.mediaDieta)totH++;if(en.canasto)totI++;if(en.dieta)totJ++;totM+=hN2;
           });
@@ -1288,6 +1301,169 @@ return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:800}}>
     </div>
   </div>`;
 }
+
+function ResumenMensual({sess,partes}){
+  const now=new Date();
+  const [mes,setMes]=useState(String(now.getMonth()+1).padStart(2,"0"));
+  const [anio,setAnio]=useState(String(now.getFullYear()));
+  const mnames=["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  const toArrR=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
+
+  // Filter partes for this worker in selected month
+  const year=parseInt(anio),month=parseInt(mes);
+  const misPartes=(partes||[]).filter(p=>{
+    if(!p||!p.date)return false;
+    const[y,m]=p.date.split("-").map(Number);
+    if(y!==year||m!==month)return false;
+    if(p.worker===sess.username)return true;
+    return toArrR(p.participantes).some(par=>par.worker===sess.username);
+  });
+
+  // Get entries for this worker (own or as participante)
+  const getEntries=p=>{
+    if(p.worker===sess.username)return p.entries||[];
+    const par=toArrR(p.participantes).find(par=>par.worker===sess.username);
+    return par?par.entries||[]:[];
+  };
+
+  const allEntries=misPartes.flatMap(getEntries);
+
+  // Calculations
+  const hOrd=allEntries.reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+  const hExt=allEntries.reduce((s,e)=>s+(e.horasExtra||0),0);
+  const hNoc=allEntries.reduce((s,e)=>s+(e.horasNocturnas||0),0);
+  // km solo se cuentan cuando se usa vehiculo propio
+  const esPropio=p=>{
+    const vs=Array.isArray(p.vehiculos)?p.vehiculos:(p.vehiculo?[p.vehiculo]:[]);
+    return vs.includes("PROPIO")||vs.length===0&&!p.vehiculo; // PROPIO o sin vehiculo (partes antiguos)
+  };
+  const km=misPartes.reduce((s,p)=>{
+    if(!esPropio(p))return s;
+    return s+getEntries(p).reduce((ss,e)=>ss+(parseFloat(e.km)||0),0);
+  },0);
+  const dietas=allEntries.filter(e=>e.dieta).length;
+  const medias=allEntries.filter(e=>e.mediaDieta).length;
+  const canastos=allEntries.filter(e=>e.canasto).length;
+  const guardias=allEntries.filter(e=>e.guardia).length;
+  const totalDias=misPartes.length;
+
+  // Daily breakdown
+  const diasMap={};
+  misPartes.forEach(p=>{
+    const ents=getEntries(p);
+    const hO=ents.reduce((s,e)=>s+(e.horasOrdinarias||0),0);
+    const hE=ents.reduce((s,e)=>s+(e.horasExtra||0),0);
+    const hN=ents.reduce((s,e)=>s+(e.horasNocturnas||0),0);
+    const k=ents.reduce((s,e)=>s+(parseFloat(e.km)||0),0);
+    const d=ents.some(e=>e.dieta);
+    const md=ents.some(e=>e.mediaDieta);
+    const c=ents.some(e=>e.canasto);
+    const g=ents.some(e=>e.guardia);
+    diasMap[p.date]={hO,hE,hN,k,d,md,c,g,obras:[...new Set(ents.map(e=>e.obra))]};
+  });
+  const diasOrdenados=Object.entries(diasMap).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
+    <h2 class="pt">Mi Resumen Mensual</h2>
+
+    <!-- Selector mes/año -->
+    <div class="cd" style=${{marginBottom:16}}>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div class="fg" style=${{marginBottom:0}}>
+          <label class="lb">Mes</label>
+          <select class="fi" value=${mes} onChange=${e=>setMes(e.target.value)}>
+            ${["01","02","03","04","05","06","07","08","09","10","11","12"].map((m,i)=>html2`<option key=${m} value=${m}>${mnames[i+1]}</option>`)}
+          </select>
+        </div>
+        <div class="fg" style=${{marginBottom:0}}>
+          <label class="lb">Año</label>
+          <input class="fi" type="number" value=${anio} onInput=${e=>setAnio(e.target.value)} min="2024" max="2030"/>
+        </div>
+      </div>
+    </div>
+
+    ${misPartes.length===0?html2`<div class="cd"><p class="em">Sin partes en ${mnames[month]} ${year}</p></div>`:html2`
+
+    <!-- Tarjetas resumen -->
+    <div style=${{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:16}}>
+      <div class="cd" style=${{borderTop:"4px solid #1a3a5c",marginBottom:0,textAlign:"center",padding:"14px 10px"}}>
+        <div style=${{fontSize:26,fontWeight:900,color:"#1a3a5c"}}>${hOrd.toFixed(1)}h</div>
+        <div style=${{fontSize:11,color:"#6b7280",marginTop:4,fontWeight:700,textTransform:"uppercase"}}>H. Ordinarias</div>
+      </div>
+      <div class="cd" style=${{borderTop:"4px solid #c2410c",marginBottom:0,textAlign:"center",padding:"14px 10px"}}>
+        <div style=${{fontSize:26,fontWeight:900,color:"#c2410c"}}>${hExt.toFixed(1)}h</div>
+        <div style=${{fontSize:11,color:"#6b7280",marginTop:4,fontWeight:700,textTransform:"uppercase"}}>H. Extra</div>
+      </div>
+      <div class="cd" style=${{borderTop:"4px solid #6d28d9",marginBottom:0,textAlign:"center",padding:"14px 10px"}}>
+        <div style=${{fontSize:26,fontWeight:900,color:"#6d28d9"}}>${hNoc.toFixed(1)}h</div>
+        <div style=${{fontSize:11,color:"#6b7280",marginTop:4,fontWeight:700,textTransform:"uppercase"}}>H. Nocturnas</div>
+      </div>
+      <div class="cd" style=${{borderTop:"4px solid #065f46",marginBottom:0,textAlign:"center",padding:"14px 10px"}}>
+        <div style=${{fontSize:26,fontWeight:900,color:"#065f46"}}>${km.toFixed(0)}</div>
+        <div style=${{fontSize:11,color:"#6b7280",marginTop:4,fontWeight:700,textTransform:"uppercase"}}>Km</div>
+      </div>
+    </div>
+
+    <!-- Dietas y extras -->
+    <div class="cd" style=${{marginBottom:16}}>
+      <h3 class="ctit">Complementos del mes</h3>
+      <div style=${{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+        ${[[dietas,"Dietas","#fef3c7","#92400e"],[medias,"1/2 Dietas","#fef9c3","#713f12"],[canastos,"Canastos","#dcfce7","#15803d"],[guardias,"Guardias","#ede9fe","#6d28d9"]].map(([val,label,bg,color])=>html2`
+          <div style=${{background:bg,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style=${{fontSize:13,fontWeight:700,color}}>${label}</span>
+            <span style=${{fontSize:22,fontWeight:900,color}}>${val}</span>
+          </div>`)}
+      </div>
+    </div>
+
+    <!-- Total dias -->
+    <div class="cd" style=${{marginBottom:16,background:"#f8fafc"}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style=${{fontSize:14,fontWeight:700,color:"#374151"}}>Días trabajados</span>
+        <span style=${{fontSize:22,fontWeight:900,color:"#1a3a5c"}}>${totalDias}</span>
+      </div>
+    </div>
+
+    <!-- Detalle diario -->
+    <div class="cd">
+      <h3 class="ctit">Detalle por día</h3>
+      <div style=${{overflowX:"auto"}}>
+        <table class="tb">
+          <thead><tr>
+            <th>Fecha</th><th>H.Ord</th><th>H.Ext</th><th>H.Noc</th><th>Km</th><th>D</th><th>1/2D</th><th>C</th><th>G</th>
+          </tr></thead>
+          <tbody>
+            ${diasOrdenados.map(([fecha,d])=>html2`<tr key=${fecha}>
+              <td style=${{fontWeight:600}}>${fmt(fecha)}</td>
+              <td>${d.hO.toFixed(1)}</td>
+              <td style=${{color:d.hE>0?"#c2410c":"inherit",fontWeight:d.hE>0?700:400}}>${d.hE>0?d.hE.toFixed(1):"-"}</td>
+              <td style=${{color:d.hN>0?"#6d28d9":"inherit",fontWeight:d.hN>0?700:400}}>${d.hN>0?d.hN.toFixed(1):"-"}</td>
+              <td>${d.k>0?d.k.toFixed(0):"-"}</td>
+              <td>${d.d?"✓":"-"}</td>
+              <td>${d.md?"✓":"-"}</td>
+              <td>${d.c?"✓":"-"}</td>
+              <td>${d.g?"✓":"-"}</td>
+            </tr>`)}
+            <!-- Totales -->
+            <tr style=${{background:"#1a3a5c",color:"#fff",fontWeight:800}}>
+              <td>TOTAL</td>
+              <td>${hOrd.toFixed(1)}</td>
+              <td>${hExt>0?hExt.toFixed(1):"-"}</td>
+              <td>${hNoc>0?hNoc.toFixed(1):"-"}</td>
+              <td>${km>0?km.toFixed(0):"-"}</td>
+              <td>${dietas||"-"}</td>
+              <td>${medias||"-"}</td>
+              <td>${canastos||"-"}</td>
+              <td>${guardias||"-"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`}
+  </div>`;
+}
+
 
 function MiCuenta({sess,users,sU}){
   const [pa,setPa]=useState("");const [pn,setPn]=useState("");const [pr,setPr]=useState("");
