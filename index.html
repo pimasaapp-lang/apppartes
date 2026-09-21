@@ -1073,9 +1073,40 @@ function Excel({partes,obras,users}){
     if(!window.XLSX){alert("Espera");return;}
     const wb=window.XLSX.utils.book_new();
     const det=[["Trabajador","Fecha","Codigo","Obra","Entrada","Salida","H.Ord","H.Extra","H.Noc","Km","Dieta","1/2Dieta","Canasto","Guardia","Vehiculo","Observaciones","Materiales","Unidades"]];
-    fl.forEach(p=>{const w=ws.find(u=>u.username===p.worker);(p.entries||[]).forEach(e=>{const o=(obras||[]).find(ob=>ob.code===e.obra);const[y,m,d]=p.date.split("-");det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,(p.vehiculos&&p.vehiculos.length?p.vehiculos.join(", "):p.vehiculo||""),e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);});});
+    const toArrX=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
+    fl.forEach(p=>{
+      const vehicStr=p.vehiculos&&p.vehiculos.length?p.vehiculos.join(", "):p.vehiculo||"";
+      // Main worker entries
+      if(p.worker){
+        const w=ws.find(u=>u.username===p.worker);
+        (p.entries||[]).forEach(e=>{
+          const o=(obras||[]).find(ob=>ob.code===e.obra);
+          const[y,m,d]=p.date.split("-");
+          det.push([w?w.name:p.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
+        });
+      }
+      // Participantes entries
+      toArrX(p.participantes).forEach(par=>{
+        const pw=ws.find(u=>u.username===par.worker);
+        (par.entries||[]).forEach(e=>{
+          const o=(obras||[]).find(ob=>ob.code===e.obra);
+          const[y,m,d]=p.date.split("-");
+          det.push([pw?pw.name:par.worker,d+"/"+m+"/"+y,e.obra,o?o.name:"",e.horaEntrada||"",e.horaSalida||"",e.horasOrdinarias||0,e.horasExtra||0,e.horasNocturnas||0,parseFloat(e.km)||0,e.dieta?1:0,e.mediaDieta?1:0,e.canasto?1:0,e.guardia?1:0,vehicStr,e.observaciones||"",(e.materiales||[]).map(m=>m.descripcion).filter(Boolean).join(", "),(e.materiales||[]).map(m=>m.unidades||"").filter((_,i)=>(e.materiales||[])[i]&&(e.materiales||[])[i].descripcion).join(", ")]);
+        });
+      });
+    });
     const res=[["Trabajador","H.Ord","H.Extra","H.Noc","Km","Dietas","1/2D","Canastos","Partes"]];
-    ws.forEach(w=>{const wp=fl.filter(p=>p.worker===w.username);const we=wp.flatMap(p=>p.entries||[]);if(!we.length)return;res.push([w.name,we.reduce((s,e)=>s+(e.horasOrdinarias||0),0),we.reduce((s,e)=>s+(e.horasExtra||0),0),we.reduce((s,e)=>s+(e.horasNocturnas||0),0),we.reduce((s,e)=>s+(parseFloat(e.km)||0),0),we.reduce((s,e)=>s+(e.dieta?1:0),0),we.reduce((s,e)=>s+(e.mediaDieta?1:0),0),we.reduce((s,e)=>s+(e.canasto?1:0),0),wp.length]);});
+    ws.forEach(w=>{
+      // Own partes
+      const wp=fl.filter(p=>p.worker===w.username);
+      const we=wp.flatMap(p=>p.entries||[]);
+      // Partes as participante
+      const pp=fl.filter(p=>toArrX(p.participantes).some(par=>par.worker===w.username));
+      const pe=pp.flatMap(p=>(toArrX(p.participantes).find(par=>par.worker===w.username)||{}).entries||[]);
+      const allE=[...we,...pe];
+      if(!allE.length)return;
+      res.push([w.name,allE.reduce((s,e)=>s+(e.horasOrdinarias||0),0),allE.reduce((s,e)=>s+(e.horasExtra||0),0),allE.reduce((s,e)=>s+(e.horasNocturnas||0),0),allE.reduce((s,e)=>s+(parseFloat(e.km)||0),0),allE.reduce((s,e)=>s+(e.dieta?1:0),0),allE.reduce((s,e)=>s+(e.mediaDieta?1:0),0),allE.reduce((s,e)=>s+(e.canasto?1:0),0),wp.length+pp.length]);
+    });
     const s1=window.XLSX.utils.aoa_to_sheet(det);s1["!cols"]=det[0].map(()=>({wch:18}));window.XLSX.utils.book_append_sheet(wb,s1,"Detalle");
     const s2=window.XLSX.utils.aoa_to_sheet(res);s2["!cols"]=res[0].map(()=>({wch:18}));window.XLSX.utils.book_append_sheet(wb,s2,"Resumen");
     window.XLSX.writeFile(wb,"informe.xlsx");
@@ -1097,13 +1128,24 @@ function Excel({partes,obras,users}){
       for(let d=1;d<=dias;d++){
         const ds=year+"-"+String(month).padStart(2,"0")+"-"+String(d).padStart(2,"0");
         const fechaStr=String(d).padStart(2,"0")+"/"+String(month).padStart(2,"0")+"/"+year;
-        const dayP=wp.filter(p=>p.date===ds);
+        const dayP=pp.filter(p=>{
+          if(p.date!==ds)return false;
+          if(p.worker===worker.username)return true;
+          const pArr=!p.participantes?[]:Array.isArray(p.participantes)?p.participantes:Object.values(p.participantes).filter(v=>v&&typeof v==="object");
+          return pArr.some(par=>par.worker===worker.username);
+        });
         if(!dayP.length){rows.push([wName,fechaStr]);}
-        else{dayP.forEach(parte=>{(parte.entries||[]).forEach(en=>{
-          const hO2=en.horasOrdinarias||0,hE2=en.horasExtra||0,hN2=en.horasNocturnas||0,km2=parseFloat(en.km)||0;
-          rows.push([wName,fechaStr,hO2||"",hE2||"","","",km2||"",en.mediaDieta?1:"",en.canasto?1:"",en.guardia?1:"",en.dieta?1:"",en.obra||"",parte.observaciones||"",hN2||"","",""]);
-          totC+=hO2;totD+=hE2;totG+=km2;if(en.mediaDieta)totH++;if(en.canasto)totI++;if(en.dieta)totJ++;totM+=hN2;
-        });});}
+        else{dayP.forEach(parte=>{
+          const pArr2=!parte.participantes?[]:Array.isArray(parte.participantes)?parte.participantes:Object.values(parte.participantes).filter(v=>v&&typeof v==="object");
+          const ownE=parte.worker===worker.username?parte.entries||[]:[];
+          const parE=(pArr2.find(par=>par.worker===worker.username)||{}).entries||[];
+          const allE2=[...ownE,...parE];
+          allE2.forEach(en=>{
+            const hO2=en.horasOrdinarias||0,hE2=en.horasExtra||0,hN2=en.horasNocturnas||0,km2=parseFloat(en.km)||0;
+            rows.push([wName,fechaStr,hO2||"",hE2||"","","",km2||"",en.mediaDieta?1:"",en.canasto?1:"",en.guardia?1:"",en.dieta?1:"",en.obra||"",parte.observaciones||"",hN2||"","",""]);
+            totC+=hO2;totD+=hE2;totG+=km2;if(en.mediaDieta)totH++;if(en.canasto)totI++;if(en.dieta)totJ++;totM+=hN2;
+          });
+        });}
       }
       rows.push([wName,""],[],["","TOTAL:",totC,totD,0,0,totG,totH,totI,totJ,"","",totM],[],["","NOMINAS",totC,totD,0,0,totG,totH,totI,totJ],[],["TARIFAS:","",0,0,"","",0.26,15,"",58],[],[],[]);
       const shName=worker.name.substring(0,28).replace(/[*?:/\\[\]|]/g,"").trim();
