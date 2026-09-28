@@ -1390,6 +1390,7 @@ function Excel({partes,obras,users}){
           const ownE=parte.worker===worker.username?parte.entries||[]:[];
           const parE=(pArr2.find(par=>par.worker===worker.username)||{}).entries||[];
           const allE2=[...ownE,...parE];
+          const parteVs2=Array.isArray(parte.vehiculos)?parte.vehiculos:(parte.vehiculo?[parte.vehiculo]:[]);
           allE2.forEach(en=>{
             const hO2=en.horasOrdinarias||0,hE2=en.horasExtra||0,hN2=en.horasNocturnas||0,km2=(parteVs2.includes("PROPIO")||(!parteVs2.length&&!parte.vehiculo))?parseFloat(en.km)||0:0;
             rows.push([wName,fechaStr,hO2||"",hE2||"","","",km2||"",en.mediaDieta?1:"",en.canasto?1:"",en.guardia?1:"",en.dieta?1:"",en.obra||"",parte.observaciones||"",hN2||"","",""]);
