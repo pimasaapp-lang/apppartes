@@ -1,0 +1,55 @@
+name: Backup semanal Firebase
+
+on:
+  schedule:
+    # Cada lunes a las 6:00 AM (hora UTC = 7:00 AM España invierno / 8:00 AM verano)
+    - cron: '0 6 * * 1'
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Descargar backup de Firebase
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          mkdir -p backups
+          curl -s "${{ secrets.FIREBASE_URL }}//.json" -o "backups/backup_${DATE}.json"
+          echo "Backup guardado: backups/backup_${DATE}.json"
+          # Mostrar cuantos partes hay
+          PARTES=$(python3 -c "import json; d=json.load(open('backups/backup_${DATE}.json')); p=d.get('partes',{}); print(len(p) if isinstance(p,dict) else len(p) if isinstance(p,list) else 0)" 2>/dev/null || echo "?")
+          echo "Partes en backup: $PARTES"
+
+      - name: Eliminar backups de mas de 3 meses
+        run: |
+          find backups/ -name "backup_*.json" -mtime +90 -delete 2>/dev/null || true
+
+      - name: Guardar backup en repositorio
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add backups/
+          git diff --staged --quiet || git commit -m "Backup semanal $(date +%Y-%m-%d)"
+          git push
+
+      - name: Enviar email con el backup
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USER }}
+          password: ${{ secrets.EMAIL_PASS }}
+          subject: "Backup GestionObras Pro - ${{ github.run_number }} - $(date +%d/%m/%Y)"
+          to: ${{ secrets.EMAIL_TO }}
+          from: GestionObras Pro <${{ secrets.EMAIL_USER }}>
+          body: |
+            Backup semanal automático de GestionObras Pro.
+
+            Fecha: $(date +%d/%m/%Y)
+            
+            El archivo JSON con todos los datos está adjunto a este correo.
+            También está guardado en GitHub: https://github.com/pimasaapp-lang/apppartes/tree/main/backups
+          attachments: backups/backup_$(date +%Y-%m-%d).json
