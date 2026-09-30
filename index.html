@@ -2089,6 +2089,18 @@ function ModalAnadirTrabajador({parte,users,obras,onClose,onSave}){
       </div>
     </div>
   </div>`;
-}
+}}
 
->
+// Mount app
+render(html2`<${App}/>`, document.getElementById("root"));
+</script>
+<script>
+(function(){
+  if("serviceWorker" in navigator){
+    var sw='self.addEventListener("install",e=>{self.skipWaiting();});self.addEventListener("activate",e=>{self.clients.claim();});self.addEventListener("fetch",e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});';
+    navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:"text/javascript"}))).catch(function(){});
+  }
+})();
+</script>
+</body>
+</html>
