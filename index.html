@@ -1997,8 +1997,10 @@ function ModalAnadirTrabajador({parte,users,obras,onClose,onSave}){
   const participantes=parte.participantes||[];
   const disponibles=workers.filter(w=>w.username!==parte.worker&&!participantes.find(p=>p.worker===w.username));
   const [sel,setSel]=useState("");
-  const [ents,setEnts]=useState((parte.entries||[]).map(e=>({...e})));
+  // Each entry has an "incluir" flag to select which obras to add the worker to
+  const [ents,setEnts]=useState((parte.entries||[]).map(e=>({...e,incluir:true})));
   const [err,setErr]=useState("");
+
   const updEnt=(i,f,v)=>{
     const e=[...ents];e[i]={...e[i],[f]:v};
     if(f==="horaEntrada"||f==="horaSalida"){
@@ -2009,21 +2011,27 @@ function ModalAnadirTrabajador({parte,users,obras,onClose,onSave}){
         const tot=min/60;let noc=0,cur=hh*60+mm;
         for(let t=cur;t<cur+min;t++){const tt=t%1440;if(tt>=1320||tt<360)noc+=1/60;}
         e[i].totalHoras=Math.round(tot*100)/100;e[i].horasNocturnas=Math.round(noc*100)/100;
-        let rem=Math.min(e.reduce((s,x)=>s+(x.totalHoras||0),0),8);
-        e.forEach((x,j)=>{const h=x.totalHoras||0;const ord=Math.min(h,rem);rem=Math.max(rem-ord,0);e[j].horasOrdinarias=Math.round(ord*100)/100;e[j].horasExtra=Math.round(Math.max(h-ord,0)*100)/100;});
+        let rem=Math.min(e.filter(x=>x.incluir).reduce((s,x)=>s+(x.totalHoras||0),0),8);
+        e.filter(x=>x.incluir).forEach((x,j)=>{const h=x.totalHoras||0;const ord=Math.min(h,rem);rem=Math.max(rem-ord,0);x.horasOrdinarias=Math.round(ord*100)/100;x.horasExtra=Math.round(Math.max(h-ord,0)*100)/100;});
       }
     }
     if(f==="dieta"&&v)e[i].mediaDieta=false;if(f==="mediaDieta"&&v)e[i].dieta=false;
     setEnts(e);
   };
+
   const confirmar=()=>{
     if(!sel){setErr("Selecciona un trabajador");return;}
-    const nuevosParticipantes=[...participantes,{worker:sel,entries:ents}];
+    const selEnts=ents.filter(e=>e.incluir).map(({incluir,...e})=>e);
+    if(!selEnts.length){setErr("Selecciona al menos una obra");return;}
+    const nuevosParticipantes=[...participantes,{worker:sel,entries:selEnts}];
     onSave({...parte,participantes:nuevosParticipantes});
     onClose();
   };
+
+  const obrasCount=ents.filter(e=>e.incluir).length;
+
   return html2`<div class="mb" onClick=${e=>{if(e.target===e.currentTarget)onClose();}}>
-    <div class="md" style=${{maxWidth:520}}>
+    <div class="md" style=${{maxWidth:560}}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <h3 style=${{fontSize:16,fontWeight:800,color:"#1a3a5c"}}>Anadir trabajador al parte</h3>
         <button onClick=${onClose} style=${{border:"none",background:"#f1f5f9",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16}}>X</button>
@@ -2035,49 +2043,52 @@ function ModalAnadirTrabajador({parte,users,obras,onClose,onSave}){
         </select>
       </div>
       ${disponibles.length===0&&html2`<p class="er">Todos los trabajadores ya estan en este parte</p>`}
-      <div style=${{fontWeight:700,color:"#374151",fontSize:14,marginBottom:10}}>Datos (puedes modificarlos):</div>
-      ${ents.map((en,i)=>{
-        const ob=(obras||[]).find(o=>o.code===en.obra);
-        return html2`<div key=${i} class="ec" style=${{marginBottom:10}}>
-          <div style=${{fontWeight:700,color:"#1a3a5c",fontSize:13,marginBottom:8}}>
-            <span class="ct">${en.obra}</span>
-            <span style=${{marginLeft:8,color:"#6b7280",fontWeight:400,fontSize:12}}>${ob?ob.name:""}</span>
+
+      <div style=${{marginBottom:10}}>
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <label class="lb" style=${{marginBottom:0}}>Selecciona las obras (${obrasCount}/${ents.length})</label>
+          <div style=${{display:"flex",gap:6}}>
+            <button class="bs" style=${{padding:"3px 10px",fontSize:11}} onClick=${()=>setEnts(ents.map(e=>({...e,incluir:true})))}>Todas</button>
+            <button class="bd" style=${{padding:"3px 10px",fontSize:11}} onClick=${()=>setEnts(ents.map(e=>({...e,incluir:false})))}>Ninguna</button>
           </div>
-          <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-            <div class="fg" style=${{marginBottom:0}}><label class="lb">Entrada</label><input class="fi" type="time" value=${en.horaEntrada||""} onInput=${e=>updEnt(i,"horaEntrada",e.target.value)}/></div>
-            <div class="fg" style=${{marginBottom:0}}><label class="lb">Salida</label><input class="fi" type="time" value=${en.horaSalida||""} onInput=${e=>updEnt(i,"horaSalida",e.target.value)}/></div>
-            <div class="fg" style=${{marginBottom:0}}><label class="lb">Km</label><input class="fi" type="number" min="0" value=${en.km||""} onInput=${e=>updEnt(i,"km",e.target.value)} placeholder="0"/></div>
-          </div>
-          <div style=${{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
-            ${[["dieta","Dieta"],["mediaDieta","1/2 Dieta"],["canasto","Canasto"],["guardia","Guardia"]].map(([f,l])=>html2`
-              <label key=${f} style=${{display:"flex",alignItems:"center",gap:6,fontSize:13,cursor:"pointer",background:"#f8fafc",padding:"5px 10px",borderRadius:8,border:"1px solid #e2e8f0"}}>
-                <input type="checkbox" style=${{width:16,height:16,accentColor:"#1a3a5c"}} checked=${!!en[f]} onChange=${e=>updEnt(i,f,e.target.checked)}/>${l}
-              </label>`)}
-          </div>
-        </div>`;
-      })}
+        </div>
+        ${ents.map((en,i)=>{
+          const ob=(obras||[]).find(o=>o.code===en.obra);
+          return html2`<div key=${i} style=${{border:"1.5px solid "+(en.incluir?"#1a3a5c":"#e2e8f0"),borderRadius:10,marginBottom:8,overflow:"hidden",opacity:en.incluir?1:0.5}}>
+            <!-- Header obra con toggle -->
+            <div style=${{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:en.incluir?"#f0f9ff":"#f8fafc",cursor:"pointer"}} onClick=${()=>updEnt(i,"incluir",!en.incluir)}>
+              <input type="checkbox" checked=${en.incluir} onChange=${e=>updEnt(i,"incluir",e.target.checked)} style=${{width:18,height:18,accentColor:"#1a3a5c",cursor:"pointer",flexShrink:0}} onClick=${e=>e.stopPropagation()}/>
+              <span class="ct">${en.obra}</span>
+              <span style=${{fontSize:12,color:"#6b7280",flex:1}}>${ob?ob.name:""}</span>
+              ${en.horaEntrada&&html2`<span style=${{fontSize:11,color:"#475569",fontFamily:"monospace",background:"#f1f5f9",padding:"2px 6px",borderRadius:4}}>${en.horaEntrada}-${en.horaSalida}</span>`}
+            </div>
+            <!-- Datos editables (solo si incluida) -->
+            ${en.incluir&&html2`<div style=${{padding:"10px 12px",background:"#fff",borderTop:"1px solid #e2e8f0"}}>
+              <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div class="fg" style=${{marginBottom:0}}><label class="lb">Entrada</label><input class="fi" type="time" value=${en.horaEntrada||""} onInput=${e=>updEnt(i,"horaEntrada",e.target.value)}/></div>
+                <div class="fg" style=${{marginBottom:0}}><label class="lb">Salida</label><input class="fi" type="time" value=${en.horaSalida||""} onInput=${e=>updEnt(i,"horaSalida",e.target.value)}/></div>
+                <div class="fg" style=${{marginBottom:0}}><label class="lb">Km</label><input class="fi" type="number" min="0" value=${en.km||""} onInput=${e=>updEnt(i,"km",e.target.value)} placeholder="0"/></div>
+              </div>
+              <div style=${{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                ${[["dieta","Dieta"],["mediaDieta","1/2 Dieta"],["canasto","Canasto"],["guardia","Guardia"]].map(([f,l])=>html2`
+                  <label key=${f} style=${{display:"flex",alignItems:"center",gap:6,fontSize:12,cursor:"pointer",background:"#f8fafc",padding:"4px 9px",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                    <input type="checkbox" style=${{width:15,height:15,accentColor:"#1a3a5c"}} checked=${!!en[f]} onChange=${e=>updEnt(i,f,e.target.checked)}/>${l}
+                  </label>`)}
+              </div>
+            </div>`}
+          </div>`;
+        })}
+      </div>
+
       ${err&&html2`<p class="er">${err}</p>`}
-      <div style=${{display:"flex",gap:10,marginTop:12}}>
+      <div style=${{display:"flex",gap:10,marginTop:4}}>
         <button class="bs" style=${{flex:1,padding:12}} onClick=${onClose}>Cancelar</button>
-        <button class="bp" style=${{flex:2,padding:12}} onClick=${confirmar} disabled=${!sel||disponibles.length===0}>Anadir al parte</button>
+        <button class="bp" style=${{flex:2,padding:12}} onClick=${confirmar} disabled=${!sel||disponibles.length===0||obrasCount===0}>
+          Anadir a ${obrasCount} obra${obrasCount!==1?"s":""}
+        </button>
       </div>
     </div>
   </div>`;
 }
 
-
-// Mount app
-render(html2`<${App}/>`, document.getElementById("root"));
-
-</script>
-
-<script>
-(function(){
-  if("serviceWorker" in navigator){
-    var sw='self.addEventListener("install",e=>{self.skipWaiting();});self.addEventListener("activate",e=>{self.clients.claim();});self.addEventListener("fetch",e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});';
-    navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:"text/javascript"}))).catch(function(){});
-  }
-})();
-</script>
-</body>
-</html>
+>
