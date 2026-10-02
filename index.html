@@ -175,17 +175,29 @@ function App(){
     setOR(v);
     ls.s("obras",v);
     const obj={};v.forEach((o,i)=>{if(o&&o.code)obj[o.code]=o;else obj[i]=o;});
-    await fb.set("obras",obj);
+    try{
+      await fetch(FB_URL+"/obras.json",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
+    }catch(e){console.error("Error saving obras:",e);}
   },[]);
   const sP=useCallback(async v=>{
     setPR(v);
     ls.s("partes",v);
-    const obj={};v.forEach(p=>{if(p&&p.id)obj[String(p.id).replace('.','_')]=p;});
+    // Build new object keyed by id
+    const newObj={};v.forEach(p=>{if(p&&p.id)newObj[String(p.id).replace('.','_')]=p;});
     try{
+      // 1. Get current partes from Firebase to detect deletions
+      const r0=await fetch(FB_URL+"/partes.json");
+      const currentObj=r0.ok?(await r0.json()||{}):{};
+      // 2. Find deleted partes (in Firebase but not in new list) -> set to null
+      const patch={...newObj};
+      if(currentObj&&typeof currentObj==="object"){
+        Object.keys(currentObj).forEach(k=>{if(!newObj[k])patch[k]=null;});
+      }
+      // 3. PATCH merges with existing - deleted keys set to null are removed
       const r=await fetch(FB_URL+"/partes.json",{
-        method:"PUT",
+        method:"PATCH",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(obj)
+        body:JSON.stringify(patch)
       });
       if(!r.ok)throw new Error("Error "+r.status);
       return true;
@@ -197,9 +209,11 @@ function App(){
   const sV=useCallback(async v=>{
     setVR(v);
     ls.s("vehiculos",v);
-    // Save as object keyed by matricula - avoids Firebase array corruption
-    const obj={};v.forEach(vh=>{if(vh&&vh.matricula)obj[vh.matricula.replace(/[.#$/[\]]/g,"_")]=vh;});
-    await fb.set("vehiculos",Object.keys(obj).length?obj:{"_empty":true});
+    const obj={};v.forEach(vh=>{if(vh&&vh.matricula)obj[vh.matricula.replace(/[.#$\/[\]]/g,"_")]=vh;});
+    try{
+      const payload=Object.keys(obj).length?obj:{"_empty":true};
+      await fetch(FB_URL+"/vehiculos.json",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    }catch(e){console.error("Error saving vehiculos:",e);}
   },[]);
   const login=(u,p)=>{
     const usr=(users||[]).find(x=>x.username===u&&x.password===p);
