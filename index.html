@@ -7,9 +7,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="theme-color" content="#1a3a5c"/>
 <title>GestionObras Pro</title><!-- v1782282281 -->
-<script src="https://unpkg.com/preact@10/dist/preact.umd.js"></script>
-<script src="https://unpkg.com/preact@10/hooks/dist/hooks.umd.js"></script>
-<script src="https://unpkg.com/htm@3/dist/htm.umd.js"></script>
+<script src="https://unpkg.com/preact@10.29.8/dist/preact.umd.js"></script>
+<script>window.preact||document.write('<script src="https://cdn.jsdelivr.net/npm/preact@10.29.8/dist/preact.umd.js"><\/script>')</script>
+<script src="https://unpkg.com/preact@10.29.8/hooks/dist/hooks.umd.js"></script>
+<script>window.preactHooks||document.write('<script src="https://cdn.jsdelivr.net/npm/preact@10.29.8/hooks/dist/hooks.umd.js"><\/script>')</script>
+<script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+<script>window.htm||document.write('<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"><\/script>')</script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -52,6 +55,11 @@ input,select,button,textarea{font-family:inherit;}
 .md{background:#fff;border-radius:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;padding:24px;}
 .sw{border:2px dashed #e2e8f0;border-radius:10px;background:#fafafa;touch-action:none;}
 .sw canvas{display:block;border-radius:8px;cursor:crosshair;}
+.avisos{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;width:calc(100% - 16px);max-width:560px;z-index:450;display:flex;flex-direction:column;gap:6px;}
+.aviso{color:#fff;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.25);}
+.aviso button{border:none;background:rgba(255,255,255,.22);color:#fff;font-weight:700;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12px;flex-shrink:0;}
+.con-avisos #mn{padding-bottom:70px;}
+@media(max-width:640px){.avisos{bottom:74px;}.con-avisos #mn{padding-bottom:150px!important;}}
 @keyframes spin{to{transform:rotate(360deg);}}
 </style>
 </head>
@@ -72,11 +80,7 @@ const _OBRAS = [{"code": "AB100I", "name": "CENTRAL DE INCENDIOS MONTEMARTA", "a
 
 const ls = {
   g:(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}},
-  s:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
-};
-const fb = {
-  async get(k){try{const r=await fetch(FB_URL+"/"+k+".json");if(!r.ok)return null;return r.json();}catch{return null;}},
-  async set(k,v){try{await fetch(FB_URL+"/"+k+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(v)});ls.s(k,v);}catch{ls.s(k,v);}}
+  s:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}}
 };
 // Decode unicode escapes in strings (e.g. \u00e9 -> é)
 function fixUnicode(obj){
@@ -117,122 +121,375 @@ function eVacio(obras){
 <script>
 // All components use html2 tagged template instead of JSX
 
+// ============ CAPA DE DATOS (revisada 08/10/2026) ============
+// Reglas que cumple todo el codigo de guardado:
+// 1) Cargar NUNCA escribe en Firebase.
+// 2) Guardar solo envia los registros que el usuario ha cambiado, cada uno en su propia clave
+//    (nunca la lista entera), asi un movil con datos viejos no puede pisar ni borrar lo de otros.
+// 3) Los partes no se borran fisicamente: se marcan deleted:true (papelera, recuperable).
+// 4) Sin cobertura, los partes quedan en una bandeja de salida del movil y se reenvian solos.
+// Cambiar este valor en cada version nueva: los moviles con la version anterior veran "Hay una version nueva"
+const APP_VERSION="2026.10.08-1";
+const pk=id=>String(id).replace(/[.#$\/\[\]]/g,"_");
+const arrOf=x=>Array.isArray(x)?x.filter(v=>v!=null):(x&&typeof x==="object"?Object.values(x).filter(v=>v!=null):[]);
+const entriesOf=raw=>raw==null?[]:Array.isArray(raw)?raw.map((v,i)=>[String(i),v]):(typeof raw==="object"?Object.entries(raw):[]);
+const stableStr=v=>JSON.stringify(v,(k,x)=>(x&&typeof x==="object"&&!Array.isArray(x))?Object.keys(x).sort().reduce((o,kk)=>{o[kk]=x[kk];return o;},{}):x);
+const sinAudit=o=>{const c={...o};delete c.updatedAt;delete c.updatedBy;return c;};
+const mismoItem=(a,b)=>a===b||stableStr(sinAudit(a))===stableStr(sinAudit(b));
+const VEH_DEF=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
+// Firebase puede devolver listas como objetos {0:..,1:..}: se normaliza todo a arrays al cargar
+function normParte(p){
+  const q={...p};
+  const normE=e=>(e&&typeof e==="object")?{...e,materiales:arrOf(e.materiales)}:e;
+  if(p.entries!=null)q.entries=arrOf(p.entries).map(normE);
+  if(p.participantes!=null)q.participantes=arrOf(p.participantes).filter(x=>x&&typeof x==="object").map(par=>({...par,entries:arrOf(par.entries).map(normE)}));
+  if(p.vehiculos!=null)q.vehiculos=arrOf(p.vehiculos);
+  return q;
+}
+// Agrupa los registros por su identificador real (id, username, code, matricula) aunque esten
+// guardados con claves antiguas tipo 0,1,2... Si hay copias, gana la guardada con su propia clave.
+function collect(raw,idOf){
+  const items=new Map(),claves=new Map(),mejor=new Map();
+  for(const [k,v] of entriesOf(raw)){
+    if(!v||typeof v!=="object")continue;
+    const id=idOf(v);if(id==null||id==="")continue;
+    const sid=String(id);
+    if(!claves.has(sid))claves.set(sid,[]);
+    claves.get(sid).push(k);
+    const ts=Number(v.updatedAt)||0,canon=(k===pk(sid));
+    const b=mejor.get(sid);
+    // la copia guardada con su propia clave siempre gana; entre copias antiguas, la mas reciente
+    if(!b||(canon&&!b.canon)||(canon===b.canon&&ts>b.ts)){mejor.set(sid,{ts,canon});items.set(sid,v);}
+  }
+  return{items,claves};
+}
+function renombrarEnParte(p,a,b){
+  let ch=false;const q={...p};
+  ["worker","creadorCapataz","creadoPorCapataz","workerExcluido"].forEach(f=>{if(q[f]===a){q[f]=b;ch=true;}});
+  if(p.participantes!=null&&arrOf(p.participantes).some(x=>x&&x.worker===a)){
+    q.participantes=arrOf(p.participantes).map(x=>x&&x.worker===a?{...x,worker:b}:x);ch=true;
+  }
+  return ch?q:p;
+}
+const relevantes=(lista,s)=>!s?[]:s.role==="manager"?lista:lista.filter(p=>p.worker===s.username||p.creadorCapataz===s.username||p.creadoPorCapataz===s.username||arrOf(p.participantes).some(x=>x&&x.worker===s.username));
+async function fbReq(method,path,body){
+  const ctl=(typeof AbortController!=="undefined")?new AbortController():null;
+  const to=setTimeout(()=>{try{if(ctl)ctl.abort();}catch(e){}},method==="GET"?30000:15000);
+  try{
+    const opt={method,cache:"no-store"};
+    if(ctl)opt.signal=ctl.signal;
+    if(body!==undefined){opt.headers={"Content-Type":"application/json"};opt.body=JSON.stringify(body);}
+    const r=await fetch(FB_URL+"/"+path+".json",opt);
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return method==="GET"?await r.json():true;
+  }finally{clearTimeout(to);}
+}
+// Usuarios, obras y vehiculos: se lee el estado actual del servidor y solo se tocan las claves
+// de los registros afectados (incluidas sus copias con claves antiguas).
+async function escribirColeccion(nodo,campo,upserts,borrar){
+  const raw=await fbReq("GET",nodo);
+  const ids=new Set([...upserts.map(x=>String(x[campo])),...borrar.map(String)]);
+  const canon=new Set(upserts.map(x=>pk(x[campo])));
+  const patch={};
+  for(const [k,v] of entriesOf(raw)){
+    if(v&&typeof v==="object"&&ids.has(String(v[campo]))&&!canon.has(k))patch[k]=null;
+  }
+  borrar.forEach(id=>{if(!canon.has(pk(id)))patch[pk(id)]=null;});
+  upserts.forEach(x=>{patch[pk(x[campo])]=x;});
+  if(Object.keys(patch).length)await fbReq("PATCH",nodo,patch);
+}
+// Bandeja de salida de partes (persistente en el movil)
+const OBX="outbox_partes_v1";
+let OUTBOX=(()=>{const o=ls.g(OBX,{});const r={};if(o&&typeof o==="object"&&!Array.isArray(o))Object.keys(o).forEach(k=>{const v=o[k];if(v&&typeof v==="object"&&v.id!=null)r[k]=v;});return r;})();
+const guardarOutbox=()=>{if(!ls.s(OBX,OUTBOX)){try{localStorage.removeItem("partes_cache_v2");localStorage.removeItem("partes");}catch(e){}ls.s(OBX,OUTBOX);}};
+const encolar=lista=>{lista.forEach(p=>{OUTBOX[pk(p.id)]=p;});guardarOutbox();};
+let cadenaEnvio=Promise.resolve(true);
+function enviarPendientes(){
+  const run=async()=>{
+    const ks=Object.keys(OUTBOX);
+    if(!ks.length)return true;
+    const res=await Promise.all(ks.map(async k=>{
+      const item=OUTBOX[k];
+      try{await fbReq("PUT","partes/"+k,item);if(OUTBOX[k]===item)delete OUTBOX[k];return true;}
+      catch(e){console.warn("Parte pendiente sin enviar:",k,e&&e.message);return false;}
+    }));
+    guardarOutbox();
+    return res.every(Boolean);
+  };
+  const p=cadenaEnvio.then(run,run);
+  cadenaEnvio=p.catch(()=>false);
+  return p;
+}
+
 function App(){
   const [users,setUR]=useState(null);
   const [obras,setOR]=useState(null);
   const [partes,setPR]=useState(null);
+  const [eliminados,setEL]=useState([]);
   const [vehiculos,setVR]=useState(null);
   const [sess,setSess]=useState(null);
   const [page,setPage]=useState("login");
   const [loading,setLoading]=useState(true);
-  useEffect(()=>{
-    (async()=>{
-      try{
-        const[u,o,p,v]=await Promise.all([fb.get("users"),fb.get("obras"),fb.get("partes"),fb.get("vehiculos")]);
-        // Convert Firebase objects to arrays properly
-        const toArr=x=>{
-          if(!x)return [];
-          if(Array.isArray(x))return x.filter(v=>v&&typeof v==="object");
-          if(typeof x==="object")return Object.values(x).filter(v=>v&&typeof v==="object");
-          return [];
-        };
-        const fu=fixUnicode(toArr(u).length?toArr(u):ls.g("users",[IM,...IW]));
-        const fo=fixUnicode(toArr(o).length?toArr(o):ls.g("obras",IO));
-        const fp=fixUnicode(toArr(p).length?toArr(p):ls.g("partes",[]));
-        // vehiculos: handle null, 0, {_empty:true} or array
-        const _defV=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
-        let fv=[];
-        const vArr=Array.isArray(v)?v.filter(x=>x&&x.matricula):(v&&typeof v==="object"&&!v._empty?Object.values(v).filter(x=>x&&x.matricula):[]);
-        if(vArr.length)fv=fixUnicode(vArr);
-        else fv=ls.g("vehiculos",_defV);
-        // Apply stored roles override (protects capataz assignments from Firebase resets)
-        const rolesOverride=ls.g("roles_override",{});
-        const fuWithRoles=fu.map(u=>rolesOverride[u.username]?{...u,role:rolesOverride[u.username]}:u);
-        setUR(fuWithRoles);setOR(fo);setPR(fp);setVR(fv);
-        if(!Array.isArray(u)||!u.length)fb.set("users",fu);
-        if(!Array.isArray(o)||!o.length)fb.set("obras",fo);
-        if(!Array.isArray(p))fb.set("partes",fp);
-      }catch(e){
-        const toArr2=v=>Array.isArray(v)?v:(v&&typeof v==="object"?Object.values(v):[]);
-        setUR(fixUnicode(ls.g("users",[IM,...IW])));
-        setOR(fixUnicode(ls.g("obras",IO)));
-        setPR(fixUnicode(ls.g("partes",[])));
-        const defaultV2=[{"matricula": "9591NKT", "descripcion": "Dacia Jogger", "activo": true}, {"matricula": "3078MFF", "descripcion": "Fiat Doblo (Northgate)", "activo": true}, {"matricula": "0880JNV", "descripcion": "Ford Transit Custom", "activo": true}, {"matricula": "8224MYJ", "descripcion": "Kia Sorento Isidro", "activo": true}, {"matricula": "1278HHL", "descripcion": "Mercedes Vito (Baja)", "activo": true}, {"matricula": "7420NNH", "descripcion": "Mitsubishi Fuso (Camion)", "activo": true}, {"matricula": "8510NCJ", "descripcion": "Nissan Qashqai", "activo": true}, {"matricula": "8621NJX", "descripcion": "Omoda - Domingo Rodriguez (Arval)", "activo": true}, {"matricula": "8654NJX", "descripcion": "Omoda - Cristea (Arval)", "activo": true}, {"matricula": "8542LTS", "descripcion": "Opel Combo (Alquiber Airbus)", "activo": true}, {"matricula": "6276LTZ", "descripcion": "Peugeot Partner (Alquiber Airbus)", "activo": true}, {"matricula": "9843HSX", "descripcion": "Peugeot Partner", "activo": true}, {"matricula": "3591MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "8901MNB", "descripcion": "Renault Express (Alphabet Syrsa)", "activo": true}, {"matricula": "2945JJX", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "3880MKP", "descripcion": "Renault Kangoo 5PZ (Alquiber)", "activo": true}, {"matricula": "4413KGX", "descripcion": "Renault Kangoo", "activo": true}, {"matricula": "4452NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "4481NCY", "descripcion": "Renault Kangoo (Alphabet Airbus)", "activo": true}, {"matricula": "9511NPM", "descripcion": "Renault Kangoo (Propiedad)", "activo": true}, {"matricula": "5159HRF", "descripcion": "Renault Kangoo Express Electrica", "activo": true}, {"matricula": "7935HNS", "descripcion": "Renault Trafic", "activo": true}, {"matricula": "KAROQ", "descripcion": "Skoda Karoq Bautista", "activo": true}, {"matricula": "3491NLN", "descripcion": "Skoda Octavia Bautista", "activo": true}, {"matricula": "9819LTP", "descripcion": "Toyota Proace (Alquiber)", "activo": true}, {"matricula": "4040MRZ", "descripcion": "Toyota Proace Electrica (Arval Swipcar)", "activo": true}, {"matricula": "4657KSK", "descripcion": "Volkswagen Caddy (Alquiber)", "activo": true}];
-        setVR(ls.g("vehiculos",defaultV2));
-        console.warn("Firebase load error:",e);
-      }
-      setLoading(false);
-    })();
-  },[]);
-  const sU=useCallback(async v=>{
-    setUR(v);
-    ls.s("users",v);
-    // Save as object keyed by username - avoids Firebase array corruption
-    const obj={};v.forEach(u=>{if(u&&u.username)obj[u.username]=u;});
-    await fb.set("users",obj);
-  },[]);
-  const sO=useCallback(async v=>{
-    setOR(v);
-    ls.s("obras",v);
-    const obj={};v.forEach((o,i)=>{if(o&&o.code)obj[o.code]=o;else obj[i]=o;});
-    try{
-      await fetch(FB_URL+"/obras.json",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
-    }catch(e){console.error("Error saving obras:",e);}
-  },[]);
-  const sP=useCallback(async v=>{
-    setPR(v);
-    ls.s("partes",v);
-    // Build new object keyed by id
-    const newObj={};v.forEach(p=>{if(p&&p.id)newObj[String(p.id).replace('.','_')]=p;});
-    try{
-      // 1. Get current partes from Firebase to detect deletions
-      const r0=await fetch(FB_URL+"/partes.json");
-      const currentObj=r0.ok?(await r0.json()||{}):{};
-      // 2. Find deleted partes (in Firebase but not in new list) -> set to null
-      const patch={...newObj};
-      if(currentObj&&typeof currentObj==="object"){
-        Object.keys(currentObj).forEach(k=>{if(!newObj[k])patch[k]=null;});
-      }
-      // 3. PATCH merges with existing - deleted keys set to null are removed
-      const r=await fetch(FB_URL+"/partes.json",{
-        method:"PATCH",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(patch)
-      });
-      if(!r.ok)throw new Error("Error "+r.status);
-      return true;
-    }catch(e){
-      console.error("Error guardando partes:",e);
-      return false;
-    }
-  },[]);
-  const sV=useCallback(async v=>{
-    setVR(v);
-    ls.s("vehiculos",v);
-    const obj={};v.forEach(vh=>{if(vh&&vh.matricula)obj[vh.matricula.replace(/[.#$\/[\]]/g,"_")]=vh;});
-    try{
-      const payload=Object.keys(obj).length?obj:{"_empty":true};
-      await fetch(FB_URL+"/vehiculos.json",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    }catch(e){console.error("Error saving vehiculos:",e);}
-  },[]);
-  const login=(u,p)=>{
-    const usr=(users||[]).find(x=>x.username===u&&x.password===p);
-    if(!usr)return false;
-    setSess(usr);setPage(usr.role==="manager"?"dash":"nuevo");
+  const [offline,setOffline]=useState(false);
+  const [pend,setPend]=useState(Object.keys(OUTBOX).length);
+  const [nuevaVer,setNuevaVer]=useState(false);
+  const [recuperar,setRecuperar]=useState([]);
+  const R=useRef(null);
+  if(!R.current)R.current={users:[],obras:[],partes:[],eliminados:[],vehiculos:[],sess:null,lastLoad:0,lastVer:Date.now(),busy:false,offline:false,cacheRevisada:false,gen:0};
+  const S=R.current;
+  const actPend=()=>setPend(Object.keys(OUTBOX).length);
+  const quien=()=>(S.sess&&S.sess.username)||"";
+  const ponPartes=(vivos,elim)=>{S.partes=vivos;setPR(vivos);if(elim){S.eliminados=elim;setEL(elim);}ls.s("partes_cache_v2",[...S.partes,...S.eliminados]);};
+  const ponUsers=v=>{S.users=v;setUR(v);ls.s("users",v);};
+  const ponObras=v=>{S.obras=v;setOR(v);ls.s("obras",v);};
+  const ponVehs=v=>{S.vehiculos=v;setVR(v);ls.s("vehiculos",v);};
+  const conRoles=lista=>{const ro=ls.g("roles_override",{});return lista.map(x=>ro[x.username]?{...x,role:ro[x.username]}:x);};
+  const mezclarPendientes=mapa=>{Object.values(OUTBOX).forEach(x=>{if(x&&x.id!=null)mapa.set(String(x.id),x);});return mapa;};
+  const ponListaPartes=mapa=>{const lista=fixUnicode([...mapa.values()]).map(normParte);ponPartes(lista.filter(x=>!x.deleted),lista.filter(x=>x.deleted));};
+  // Una sola vez: partes que la version anterior dejo guardados solo en este movil
+  const revisarCacheAntigua=idsServidor=>{
+    if(S.cacheRevisada)return;S.cacheRevisada=true;
+    const vieja=ls.g("partes",null);
+    if(!vieja)return;
+    const limite=Date.now()-75*864e5;
+    const cands=arrOf(vieja).filter(x=>x&&typeof x==="object"&&x.id!=null&&!idsServidor.has(String(x.id))&&Number(x.id)>=limite);
+    if(!cands.length){try{localStorage.removeItem("partes");}catch(e){}return;}
+    setRecuperar(fixUnicode(cands).map(normParte));
+  };
+  const cargar=async()=>{
+    const g=S.gen;
+    const[u,o,p,v]=await Promise.all([fbReq("GET","users"),fbReq("GET","obras"),fbReq("GET","partes"),fbReq("GET","vehiculos")]);
+    // si mientras se leia se ha guardado algo en este movil, esta lectura ya esta vieja: se descarta
+    if(S.gen!==g)return false;
+    const cu=collect(u,x=>x.username),co=collect(o,x=>x.code),cv=collect(v,x=>x.matricula),cp=collect(p,x=>x.id);
+    let fu=[...cu.items.values()];if(!fu.length)fu=arrOf(ls.g("users",null));if(!fu.length)fu=[IM,...IW];
+    let fo=[...co.items.values()];if(!fo.length)fo=arrOf(ls.g("obras",null));if(!fo.length)fo=IO;
+    let fv=[...cv.items.values()];if(!fv.length)fv=arrOf(ls.g("vehiculos",null));if(!fv.length)fv=VEH_DEF;
+    ponUsers(conRoles(fixUnicode(fu)));ponObras(fixUnicode(fo));ponVehs(fixUnicode(fv));
+    ponListaPartes(mezclarPendientes(new Map(cp.items)));
+    S.lastLoad=Date.now();S.offline=false;setOffline(false);
+    revisarCacheAntigua(new Set([...cp.claves.keys(),...Object.values(OUTBOX).map(x=>String(x.id))]));
     return true;
   };
-  const logout=()=>{setSess(null);setPage("login");};
+  // Sin conexion al abrir: se muestran los datos guardados en el movil (sin escribir nada)
+  const cargarLocal=()=>{
+    const lu=arrOf(ls.g("users",null)),lo=arrOf(ls.g("obras",null)),lv=arrOf(ls.g("vehiculos",null));
+    ponUsers(conRoles(fixUnicode(lu.length?lu:[IM,...IW])));
+    ponObras(fixUnicode(lo.length?lo:IO));
+    ponVehs(fixUnicode(lv.length?lv:VEH_DEF));
+    const cache=arrOf(ls.g("partes_cache_v2",null)||ls.g("partes",null));
+    ponListaPartes(mezclarPendientes(new Map(cache.filter(x=>x&&typeof x==="object"&&x.id!=null).map(x=>[String(x.id),x]))));
+    S.offline=true;setOffline(true);
+  };
+  const comprobarVersion=async()=>{
+    if(Date.now()-S.lastVer<600000)return;
+    S.lastVer=Date.now();
+    try{
+      const res=await fetch(location.href.split("#")[0],{cache:"no-store"});
+      if(!res.ok)return;
+      const t=await res.text();
+      const m=t.match(new RegExp("APP_"+"VERSION=\"([^\"]+)\""));
+      if(m&&m[1]!==APP_VERSION)setNuevaVer(true);
+    }catch(e){}
+  };
+  // Al volver a la app (o recuperar cobertura): enviar pendientes y recargar datos frescos
+  const refrescar=async forzar=>{
+    if(S.busy)return;
+    if(!forzar&&!S.offline&&Date.now()-S.lastLoad<120000)return;
+    S.busy=true;
+    try{await enviarPendientes();actPend();await cargar();}
+    catch(e){console.warn("Sin conexion:",e&&e.message);}
+    finally{S.busy=false;actPend();}
+    comprobarVersion();
+  };
+  useEffect(()=>{
+    (async()=>{
+      try{await cargar();}
+      catch(e){console.warn("Sin conexion al cargar, usando datos del movil:",e&&e.message);cargarLocal();}
+      setLoading(false);
+      enviarPendientes().then(actPend);
+    })();
+    const vis=()=>{if(document.visibilityState==="visible")refrescar(false);};
+    const onl=()=>refrescar(true);
+    document.addEventListener("visibilitychange",vis);
+    window.addEventListener("online",onl);
+    const iv=setInterval(()=>{
+      if(S.offline)refrescar(true);
+      else if(Object.keys(OUTBOX).length)enviarPendientes().then(actPend);
+    },30000);
+    return()=>{document.removeEventListener("visibilitychange",vis);window.removeEventListener("online",onl);clearInterval(iv);};
+  },[]);
+  // ---- Partes ----
+  // sP recibe la lista completa (como antes) pero SOLO envia los partes que han cambiado.
+  // Los que falten en la lista NO se borran (para borrar se usa dP).
+  const sP=useCallback(async v=>{
+    const prev=new Map(S.partes.map(x=>[String(x.id),x]));
+    const now=Date.now(),by=quien();
+    const cambiados=[];
+    (v||[]).forEach(x=>{
+      if(!x||typeof x!=="object"||x.id==null)return;
+      const old=prev.get(String(x.id));
+      if(old&&mismoItem(old,x))return;
+      cambiados.push({...x,updatedAt:now,updatedBy:by});
+    });
+    if(!cambiados.length)return true;
+    S.gen++;
+    cambiados.forEach(x=>prev.set(String(x.id),x));
+    const ids=new Set(cambiados.map(x=>String(x.id)));
+    ponPartes([...prev.values()],S.eliminados.filter(x=>!ids.has(String(x.id))));
+    encolar(cambiados);actPend();
+    const ok=await enviarPendientes();actPend();
+    return ok;
+  },[]);
+  // dP: borra UN parte (queda en la papelera con quien y cuando lo borro)
+  const dP=useCallback(async id=>{
+    const sid=String(id);
+    const cur=S.partes.find(x=>String(x.id)===sid);
+    if(!cur)return true;
+    const now=Date.now(),by=quien();
+    S.gen++;
+    const tomb={...cur,deleted:true,deletedAt:now,deletedBy:by,updatedAt:now,updatedBy:by};
+    ponPartes(S.partes.filter(x=>String(x.id)!==sid),[tomb,...S.eliminados.filter(x=>String(x.id)!==sid)]);
+    encolar([tomb]);actPend();
+    const ok=await enviarPendientes();actPend();
+    return ok;
+  },[]);
+  // rP: restaura un parte de la papelera
+  const rP=useCallback(async id=>{
+    const sid=String(id);
+    const t=S.eliminados.find(x=>String(x.id)===sid);
+    if(!t)return true;
+    const now=Date.now(),by=quien();
+    const{deleted,deletedAt,deletedBy,...resto}=t;
+    S.gen++;
+    const p={...resto,restauradoAt:now,restauradoBy:by,updatedAt:now,updatedBy:by};
+    ponPartes([...S.partes.filter(x=>String(x.id)!==sid),p],S.eliminados.filter(x=>String(x.id)!==sid));
+    encolar([p]);actPend();
+    const ok=await enviarPendientes();actPend();
+    return ok;
+  },[]);
+  // ---- Usuarios, obras, vehiculos ----
+  const guardarColeccion=async(nodo,campo,actual,poner,v)=>{
+    const antes=actual();
+    const prev=new Map(antes.map(x=>[String(x[campo]),x]));
+    const now=Date.now(),by=quien();
+    const cambiados=[];
+    (v||[]).forEach(x=>{
+      if(!x||typeof x!=="object"||x[campo]==null||x[campo]==="")return;
+      const old=prev.get(String(x[campo]));
+      if(old&&mismoItem(old,x))return;
+      cambiados.push({...x,updatedAt:now,updatedBy:by});
+    });
+    if(!cambiados.length)return true;
+    S.gen++;
+    cambiados.forEach(x=>prev.set(String(x[campo]),x));
+    poner([...prev.values()]);
+    try{await escribirColeccion(nodo,campo,cambiados,[]);return true;}
+    catch(e){console.error("Error guardando "+nodo+":",e);poner(antes);alert("No se ha podido guardar: no hay conexion con el servidor. Intentalo de nuevo cuando tengas cobertura.");return false;}
+  };
+  const borrarDeColeccion=async(nodo,campo,actual,poner,id)=>{
+    const antes=actual();
+    S.gen++;
+    poner(antes.filter(x=>String(x[campo])!==String(id)));
+    try{await escribirColeccion(nodo,campo,[],[id]);return true;}
+    catch(e){console.error("Error borrando en "+nodo+":",e);poner(antes);alert("No se ha podido borrar: no hay conexion con el servidor. Intentalo de nuevo.");return false;}
+  };
+  const sU=useCallback(v=>guardarColeccion("users","username",()=>S.users,ponUsers,v),[]);
+  const dU=useCallback(id=>borrarDeColeccion("users","username",()=>S.users,ponUsers,id),[]);
+  const sO=useCallback(v=>guardarColeccion("obras","code",()=>S.obras,ponObras,v),[]);
+  const dO=useCallback(id=>borrarDeColeccion("obras","code",()=>S.obras,ponObras,id),[]);
+  const sV=useCallback(v=>guardarColeccion("vehiculos","matricula",()=>S.vehiculos,ponVehs,v),[]);
+  const dV=useCallback(id=>borrarDeColeccion("vehiculos","matricula",()=>S.vehiculos,ponVehs,id),[]);
+  // Cambio de nombre de usuario: se cambia el usuario Y todos sus partes en una sola operacion
+  const renombrarUsuario=useCallback(async(viejo,nuevo)=>{
+    const[ru,rp]=await Promise.all([fbReq("GET","users"),fbReq("GET","partes")]);
+    const cu=collect(ru,x=>x.username);
+    if(cu.items.has(nuevo)){const e=new Error("Ese usuario ya existe");e.usuario=true;throw e;}
+    const base=cu.items.get(viejo)||S.users.find(x=>x.username===viejo);
+    if(!base){const e=new Error("Usuario no encontrado");e.usuario=true;throw e;}
+    const now=Date.now();
+    const patch={};
+    (cu.claves.get(viejo)||[]).forEach(k=>{if(k!==pk(nuevo))patch["users/"+k]=null;});
+    if(pk(viejo)!==pk(nuevo))patch["users/"+pk(viejo)]=null;
+    patch["users/"+pk(nuevo)]={...base,username:nuevo,updatedAt:now,updatedBy:nuevo};
+    const todos=mezclarPendientes(new Map(collect(rp,x=>x.id).items));
+    const cambiados=[];
+    todos.forEach(p=>{const q=renombrarEnParte(p,viejo,nuevo);if(q!==p){const qq={...q,updatedAt:now,updatedBy:nuevo};cambiados.push(qq);patch["partes/"+pk(qq.id)]=qq;}});
+    await fbReq("PATCH","",patch);
+    cambiados.forEach(q=>{const k=pk(q.id);if(OUTBOX[k])OUTBOX[k]=q;});guardarOutbox();
+    return cambiados.length;
+  },[]);
+  const login=(u,p)=>{
+    const usr=(S.users||[]).find(x=>x.username===u&&x.password===p);
+    if(!usr)return false;
+    S.sess=usr;setSess(usr);setPage(usr.role==="manager"?"dash":"nuevo");
+    return true;
+  };
+  const logout=()=>{S.sess=null;setSess(null);setPage("login");};
+  const rel=relevantes(recuperar,sess);
+  useEffect(()=>{try{document.body.classList.toggle("con-avisos",!!(offline||pend>0||nuevaVer));}catch(e){}},[offline,pend,nuevaVer]);
+  useEffect(()=>{
+    if(sess&&recuperar.length&&!relevantes(recuperar,sess).length){try{localStorage.removeItem("partes");}catch(e){}setRecuperar([]);}
+  },[sess,recuperar]);
+  const resolverRecuperacion=async elegidos=>{
+    const lista=relevantes(recuperar,S.sess).filter(x=>elegidos&&elegidos.has(String(x.id)));
+    if(lista.length){const now=Date.now();await sP([...S.partes,...lista.map(x=>({...x,recuperadoDeMovil:now}))]);}
+    try{localStorage.removeItem("partes");}catch(e){}
+    setRecuperar([]);
+  };
   if(loading)return html2`<div style=${{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"linear-gradient(150deg,#0f2340,#1a3a5c)",gap:20}}>
     <img src=${LOGO} style=${{height:80,objectFit:"contain"}}/>
     <div style=${{color:"#fff",fontWeight:700,fontSize:16}}>Cargando...</div>
     <div style=${{width:40,height:40,border:"3px solid rgba(255,255,255,.2)",borderTopColor:"#f0a500",borderRadius:"50%",animation:"spin .8s linear infinite"}}/>
   </div>`;
-  if(!sess)return html2`<${Login} onLogin=${login}/>`;
-  if(sess.role==="manager")return html2`<${Admin} sess=${sess} obras=${obras} sO=${sO} partes=${partes} sP=${sP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} vehiculos=${vehiculos} sV=${sV}/>`;
-  if(sess.role==="capataz")return html2`<${Capataz} sess=${sess} obras=${obras} partes=${partes} sP=${sP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} vehiculos=${vehiculos}/>`;
-  return html2`<${Worker} sess=${sess} obras=${obras} partes=${partes} sP=${sP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} vehiculos=${vehiculos}/>`;
+  let cuerpo;
+  if(!sess)cuerpo=html2`<${Login} onLogin=${login}/>`;
+  else if(sess.role==="manager")cuerpo=html2`<${Admin} sess=${sess} obras=${obras} sO=${sO} dO=${dO} partes=${partes} eliminados=${eliminados} sP=${sP} dP=${dP} rP=${rP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} dU=${dU} vehiculos=${vehiculos} sV=${sV} dV=${dV}/>`;
+  else if(sess.role==="capataz")cuerpo=html2`<${Capataz} sess=${sess} obras=${obras} partes=${partes} sP=${sP} dP=${dP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} renU=${renombrarUsuario} vehiculos=${vehiculos}/>`;
+  else cuerpo=html2`<${Worker} sess=${sess} obras=${obras} partes=${partes} sP=${sP} dP=${dP} page=${page} setPage=${setPage} logout=${logout} users=${users} sU=${sU} renU=${renombrarUsuario} vehiculos=${vehiculos}/>`;
+  return html2`<div>
+    ${cuerpo}
+    <${Avisos} offline=${offline} pend=${pend} nuevaVer=${nuevaVer} reintentar=${()=>refrescar(true)}/>
+    ${sess&&rel.length>0&&html2`<${ModalRecuperar} lista=${rel} users=${users} onSubir=${sel=>resolverRecuperacion(sel)} onDescartar=${()=>resolverRecuperacion(null)}/>`}
+  </div>`;
 }
 
+function Avisos({offline,pend,nuevaVer,reintentar}){
+  const items=[];
+  if(nuevaVer)items.push(html2`<div key="v" class="aviso" style=${{background:"#1e40af"}}>Hay una version nueva de la app.<button onClick=${()=>location.reload()}>Actualizar</button></div>`);
+  if(offline)items.push(html2`<div key="o" class="aviso" style=${{background:"#475569"}}>Sin conexion con el servidor: se muestran los datos guardados en este movil.<button onClick=${reintentar}>Reintentar</button></div>`);
+  if(pend>0)items.push(html2`<div key="p" class="aviso" style=${{background:"#b45309"}}>${pend===1?"1 parte pendiente de enviar. Se enviara solo cuando haya cobertura.":pend+" partes pendientes de enviar. Se enviaran solos cuando haya cobertura."}<button onClick=${reintentar}>Reintentar</button></div>`);
+  if(!items.length)return null;
+  return html2`<div class="avisos">${items}</div>`;
+}
+
+function ModalRecuperar({lista,users,onSubir,onDescartar}){
+  const [busy,setBusy]=useState(false);
+  const [sel,setSel]=useState(()=>new Set(lista.map(p=>String(p.id))));
+  const n=lista.length,k=sel.size;
+  const tog=id=>{const s2=new Set(sel);s2.has(id)?s2.delete(id):s2.add(id);setSel(s2);};
+  return html2`<div class="mb">
+    <div class="md" style=${{maxWidth:480}}>
+      <h3 style=${{fontSize:16,fontWeight:800,color:"#1a3a5c",marginBottom:8}}>${n===1?"Hay 1 parte en este movil que no esta en el servidor":"Hay "+n+" partes en este movil que no estan en el servidor"}</h3>
+      <p style=${{fontSize:13,color:"#475569",marginBottom:12}}>Pueden ser partes que no se llegaron a enviar o que se perdieron con la version anterior de la app. Marca los que quieras recuperar y pulsa "Subir".</p>
+      <div style=${{maxHeight:280,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10,padding:"4px 10px",marginBottom:14}}>
+        ${[...lista].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(p=>{
+          const id=String(p.id);
+          const w=(users||[]).find(u=>u.username===p.worker);
+          const h=(p.entries||[]).reduce((s,e)=>s+(e.totalHoras||0),0);
+          return html2`<label key=${id} style=${{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13,color:"#1e293b",cursor:"pointer"}}>
+            <input type="checkbox" style=${{width:18,height:18,accentColor:"#1a3a5c",flexShrink:0}} checked=${sel.has(id)} onChange=${()=>tog(id)}/>
+            <span><b>${fmt(p.date)}</b> · ${w?w.name:(p.worker||"-")} · ${h.toFixed(1)}h · ${(p.entries||[]).map(e=>e.obra).join(", ")}</span>
+          </label>`;
+        })}
+      </div>
+      <div style=${{display:"flex",gap:10}}>
+        <button class="bs" style=${{flex:1,padding:12}} disabled=${busy} onClick=${async()=>{if(confirm("Los partes no marcados se descartaran y no se podran recuperar. Continuar?")){setBusy(true);if(k)await onSubir(sel);else await onDescartar();}}}>${k?"Subir solo marcados":"Descartar todos"}</button>
+        <button class="bp" style=${{flex:2,padding:12}} disabled=${busy||!k} onClick=${async()=>{setBusy(true);await onSubir(sel);}}>${busy?"Subiendo...":(k===1?"Subir 1 parte":"Subir "+k+" partes")}</button>
+      </div>
+    </div>
+  </div>`;
+}
 function Login({onLogin}){
   const [u,setU]=useState("");const [p,setP]=useState("");const [err,setErr]=useState("");
   const go=()=>{if(!onLogin(u.trim(),p))setErr("Usuario o contrasena incorrectos");};
@@ -285,7 +542,7 @@ function Layout({sess,page,setPage,logout,links,isMgr,children}){
   </div>`;
 }
 
-function Admin({sess,obras,sO,partes,sP,page,setPage,logout,users,sU,vehiculos,sV}){
+function Admin({sess,obras,sO,dO,partes,eliminados,sP,dP,rP,page,setPage,logout,users,sU,dU,vehiculos,sV,dV}){
   const lks=[
     {id:"dash",label:"Inicio",i:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"},
     {id:"obras",label:"Obras",i:"M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"},
@@ -296,15 +553,15 @@ function Admin({sess,obras,sO,partes,sP,page,setPage,logout,users,sU,vehiculos,s
   ];
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${true}>
     ${page==="dash"&&html2`<${Dash} partes=${partes} obras=${obras} users=${users}/>`}
-    ${page==="obras"&&html2`<${Obras} obras=${obras} sO=${sO}/>`}
-    ${page==="partes"&&html2`<${TodosPartes} partes=${partes} obras=${obras} users=${users} sP=${sP} vehiculos=${vehiculos}/>`}
-    ${page==="equipo"&&html2`<${Equipo} users=${users} sU=${sU}/>`}
+    ${page==="obras"&&html2`<${Obras} obras=${obras} sO=${sO} dO=${dO}/>`}
+    ${page==="partes"&&html2`<${TodosPartes} partes=${partes} eliminados=${eliminados} obras=${obras} users=${users} sP=${sP} dP=${dP} rP=${rP} vehiculos=${vehiculos}/>`}
+    ${page==="equipo"&&html2`<${Equipo} users=${users} sU=${sU} dU=${dU} partes=${partes} sP=${sP}/>`}
     ${page==="excel"&&html2`<${Excel} partes=${partes} obras=${obras} users=${users}/>`}
-    ${page==="vehiculos"&&html2`<${Vehiculos} vehiculos=${vehiculos} sV=${sV}/>`}
+    ${page==="vehiculos"&&html2`<${Vehiculos} vehiculos=${vehiculos} sV=${sV} dV=${dV}/>`}
   </${Layout}>`;
 }
 
-function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
+function Worker({sess,obras,partes,sP,dP,page,setPage,logout,users,sU,renU,vehiculos}){
   const lks=[
     {id:"nuevo",label:"Nuevo",i:"M12 5v14M5 12h14"},
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
@@ -318,13 +575,13 @@ function Worker({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   );
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
-    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
+    ${page==="mispartes"&&html2`<${MisPartes} partes=${myP} obras=${obras} sP=${sP} dP=${dP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
     ${page==="resumen"&&html2`<${ResumenMensual} sess=${sess} partes=${partes}/>`}
-    ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
+    ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU} renU=${renU}/>`}
   </${Layout}>`;
 }
 
-function Capataz({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
+function Capataz({sess,obras,partes,sP,dP,page,setPage,logout,users,sU,renU,vehiculos}){
   const lks=[
     {id:"nuevo",label:"Nuevo",i:"M12 5v14M5 12h14"},
     {id:"mispartes",label:"Mis Partes",i:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"},
@@ -334,9 +591,9 @@ function Capataz({sess,obras,partes,sP,page,setPage,logout,users,sU,vehiculos}){
   const myP=(partes||[]).filter(p=>p.worker===sess.username||p.creadorCapataz===sess.username);
   return html2`<${Layout} sess=${sess} page=${page} setPage=${setPage} logout=${logout} links=${lks} isMgr=${false}>
     ${page==="nuevo"&&html2`<${NuevoParte} sess=${sess} obras=${obras} partes=${partes} sP=${sP} vehiculos=${vehiculos} users=${users} esCapataz=${true}/>`}
-    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
+    ${page==="mispartes"&&html2`<${MisPartesCapataz} partes=${myP} obras=${obras} sP=${sP} dP=${dP} allP=${partes} users=${users} sess=${sess} vehiculos=${vehiculos}/>`}
     ${page==="resumen"&&html2`<${ResumenMensual} sess=${sess} partes=${partes}/>`}
-    ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU}/>`}
+    ${page==="cuenta"&&html2`<${MiCuenta} sess=${sess} users=${users} sU=${sU} renU=${renU}/>`}
   </${Layout}>`;
 }
 
@@ -370,7 +627,7 @@ function Dash({partes,obras,users}){
   </div>`;
 }
 
-function Obras({obras,sO}){
+function Obras({obras,sO,dO}){
   const [code,setC]=useState("");const [name,setN]=useState("");const [err,setE]=useState("");
   const add=()=>{
     if(!code.trim()||!name.trim()){setE("Rellena codigo y nombre");return;}
@@ -396,24 +653,41 @@ function Obras({obras,sO}){
           <div style=${{display:"flex",gap:8,flexShrink:0}}>
             <span class="bg2" style=${{background:o.active?"#dcfce7":"#fee2e2",color:o.active?"#16a34a":"#dc2626"}}>${o.active?"Activa":"Inactiva"}</span>
             <button class="bw" onClick=${()=>sO((obras||[]).map(x=>x.code===o.code?{...x,active:!x.active}:x))}>${o.active?"Desactivar":"Activar"}</button>
-            <button class="bd" onClick=${()=>{if(confirm("Eliminar?"))sO((obras||[]).filter(x=>x.code!==o.code));}}>X</button>
+            <button class="bd" onClick=${()=>{if(confirm("Eliminar la obra "+o.code+"?"))dO(o.code);}}>X</button>
           </div>
         </div>`)}
     </div>
   </div>`;
 }
 
-function Equipo({users,sU}){
+function Equipo({users,sU,dU,partes,sP}){
   const [n,setN]=useState("");const [u,setU]=useState("");const [p,setP]=useState("");
   const [rol,setRol]=useState("worker");const [err,setE]=useState("");const [ok,setOk]=useState("");
   const ws=(users||[]).filter(x=>x.role==="worker");
   const caps=(users||[]).filter(x=>x.role==="capataz");
-  const add=()=>{
+  const add=async()=>{
     if(!n.trim()||!u.trim()||!p.trim()){setE("Completa todos los campos");return;}
     if((users||[]).find(x=>x.username===u.trim())){setE("Ese usuario ya existe");return;}
-    sU([...(users||[]),{username:u.trim(),password:p,role:rol,name:n.trim()}]);
+    const guardado=await sU([...(users||[]),{username:u.trim(),password:p,role:rol,name:n.trim()}]);
+    if(!guardado)return;
     setN("");setU("");setP("");setE("");setOk((rol==="capataz"?"Encargado":"Trabajador")+" anadido");
     setTimeout(()=>setOk(""),3000);
+  };
+  // Partes a nombre de usuarios que ya no existen (p.ej. tras un cambio de nombre de usuario)
+  const [destino,setDestino]=useState({});
+  const nombres=new Set((users||[]).map(x=>x.username));
+  const huerf={};
+  (partes||[]).forEach(pt=>{
+    const refs=new Set();
+    if(pt.worker&&!nombres.has(pt.worker))refs.add(pt.worker);
+    arrOf(pt.participantes).forEach(x=>{if(x&&x.worker&&!nombres.has(x.worker))refs.add(x.worker);});
+    refs.forEach(r=>{huerf[r]=(huerf[r]||0)+1;});
+  });
+  const reasignar=async viejo=>{
+    const nuevo=destino[viejo];if(!nuevo)return;
+    const w=(users||[]).find(x=>x.username===nuevo);
+    if(!confirm("Pasar los "+huerf[viejo]+" partes de @"+viejo+" a "+(w?w.name:nuevo)+"?"))return;
+    await sP((partes||[]).map(pt=>renombrarEnParte(pt,viejo,nuevo)));
   };
   const toggle=user=>{
     const updated=(users||[]).map(x=>x.username===user.username?{...x,role:x.role==="capataz"?"worker":"capataz"}:x);
@@ -439,6 +713,19 @@ function Equipo({users,sU}){
       ${ok&&html2`<p class="ok">${ok}</p>`}
       <button class="bp" style=${{marginTop:8,width:"100%"}} onClick=${add}>+ Anadir</button>
     </div>
+    ${Object.keys(huerf).length>0&&html2`<div class="cd" style=${{border:"2px solid #f59e0b"}}>
+      <h3 class="ctit">Partes de usuarios que ya no existen</h3>
+      <p style=${{fontSize:13,color:"#6b7280",marginBottom:10}}>Estos partes estan a nombre de un usuario que ya no existe (por ejemplo, porque se cambio el nombre de usuario). El trabajador no los ve y no cuentan en las nominas hasta que los pases a su usuario actual.</p>
+      ${Object.keys(huerf).sort().map(viejo=>html2`<div key=${viejo} style=${{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
+        <span style=${{fontWeight:700,color:"#1e293b"}}>@${viejo}</span>
+        <span class="bg2" style=${{background:"#fef3c7",color:"#92400e"}}>${huerf[viejo]} parte${huerf[viejo]>1?"s":""}</span>
+        <select class="fi" style=${{flex:1,minWidth:160}} value=${destino[viejo]||""} onChange=${e=>setDestino({...destino,[viejo]:e.target.value})}>
+          <option value="">Pasar a...</option>
+          ${(users||[]).filter(x=>x.role!=="manager").map(x=>html2`<option key=${x.username} value=${x.username}>${x.name} (@${x.username})</option>`)}
+        </select>
+        <button class="bp" disabled=${!destino[viejo]} onClick=${()=>reasignar(viejo)}>Reasignar</button>
+      </div>`)}
+    </div>`}
     <div class="cd">
       <h3 class="ctit">Encargados (${caps.length})</h3>
       ${caps.length===0?html2`<p class="em">Sin encargados</p>`:caps.map(w=>html2`
@@ -446,7 +733,7 @@ function Equipo({users,sU}){
           <div><div style=${{fontWeight:700,color:"#1e293b",fontSize:14}}>${w.name}</div><div style=${{fontSize:12,color:"#6b7280"}}>@${w.username}</div></div>
           <div style=${{display:"flex",gap:8}}>
             <button class="bw" onClick=${()=>toggle(w)}>Pasar a trabajador</button>
-            <button class="bd" onClick=${()=>{if(confirm("Eliminar?"))sU((users||[]).filter(x=>x.username!==w.username));}}>X</button>
+            <button class="bd" onClick=${()=>{if(confirm("Eliminar a "+w.name+"?"))dU(w.username);}}>X</button>
           </div>
         </div>`)}
     </div>
@@ -457,7 +744,7 @@ function Equipo({users,sU}){
           <div><div style=${{fontWeight:700,color:"#1e293b",fontSize:14}}>${w.name}</div><div style=${{fontSize:12,color:"#6b7280"}}>@${w.username}</div></div>
           <div style=${{display:"flex",gap:8}}>
             <button class="bw" onClick=${()=>toggle(w)}>Hacer encargado</button>
-            <button class="bd" onClick=${()=>{if(confirm("Eliminar?"))sU((users||[]).filter(x=>x.username!==w.username));}}>X</button>
+            <button class="bd" onClick=${()=>{if(confirm("Eliminar a "+w.name+"?"))dU(w.username);}}>X</button>
           </div>
         </div>`)}
     </div>
@@ -500,7 +787,7 @@ function ObraBuscador({obras,value,onChange}){
   </div>`;
 }
 
-function Vehiculos({vehiculos,sV}){
+function Vehiculos({vehiculos,sV,dV}){
   const [mat,setMat]=useState("");
   const [desc,setDesc]=useState("");
   const [err,setE]=useState("");
@@ -512,7 +799,8 @@ function Vehiculos({vehiculos,sV}){
       const lista=Array.isArray(vehiculos)?vehiculos:[];
       if(lista.find(v=>v.matricula===m)){setE("Esa matricula ya existe");return;}
       const nueva=[...lista,{matricula:m,descripcion:desc.trim(),activo:true}];
-      sV(nueva).then(()=>{
+      sV(nueva).then(guardado=>{
+        if(!guardado)return;
         setMat("");setDesc("");setE("");setOk("Vehiculo anadido");setTimeout(()=>setOk(""),3000);
       }).catch(err=>{
         setE("Error al guardar: "+err.message);
@@ -543,7 +831,7 @@ function Vehiculos({vehiculos,sV}){
           <div style=${{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
             <span class="bg2" style=${{background:v.activo?"#dcfce7":"#fee2e2",color:v.activo?"#16a34a":"#dc2626"}}>${v.activo?"Activo":"Inactivo"}</span>
             <button class="bw" onClick=${()=>{const nueva=(vehiculos||[]).map(x=>x.matricula===v.matricula?{...x,activo:!x.activo}:x);sV(nueva);}}>${v.activo?"Desactivar":"Activar"}</button>
-            <button class="bd" onClick=${()=>{if(confirm("Eliminar "+v.matricula+"?")){const nueva=(vehiculos||[]).filter(x=>x.matricula!==v.matricula);sV(nueva);}}}>X</button>
+            <button class="bd" onClick=${()=>{if(confirm("Eliminar "+v.matricula+"?"))dV(v.matricula);}}>X</button>
           </div>
         </div>`)}
     </div>
@@ -588,15 +876,14 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
     setSaving(true);setErr("");
     const esFestivoDate=FESTIVOS.has(date)||(date&&new Date(date+"T12:00:00").getDay()===0);
     const entriesFinal=ents.map(e=>esFestivoDate?{...e,horasFestivo:e.totalHoras||0,horasOrdinarias:0,horasExtra:0}:e);
-    const nuevoParte={date,worker:workerEfectivo,entries:entriesFinal,vehiculos:vehiculos2,participantes:participantes2,id:Date.now(),esFestivo:esFestivoDate,creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined};
+    const nuevoParte={date,worker:workerEfectivo,entries:entriesFinal,vehiculos:vehiculos2,participantes:participantes2,id:Date.now()+Math.random(),esFestivo:esFestivoDate,creadoPorCapataz:esCapataz&&paraWorker!=="propio"?sess.username:undefined};
     const ok2=await sP([...(partes||[]),nuevoParte]);
     setSaving(false);
-    if(ok2){
-      setOk("guardado");setEnts([eVacio(obras)]);setVehiculos2([]);setParticipantes2([]);setParaWorker("propio");
-      setTimeout(()=>setOk(""),4000);
-    }else{
-      setErr("Error al conectar con el servidor. El parte se ha guardado localmente pero puede que no se haya sincronizado. Intentalo de nuevo.");
-    }
+    // Tanto si se ha enviado como si queda pendiente, el parte ya esta guardado: se limpia el
+    // formulario para que nadie lo repita (repetirlo creaba partes duplicados).
+    setEnts([eVacio(obras)]);setVehiculos2([]);setParticipantes2([]);setParaWorker("propio");
+    if(ok2){setOk("guardado");setTimeout(()=>setOk(""),4000);}
+    else{setOk("pendiente");setTimeout(()=>setOk(""),12000);}
   };
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Nuevo Parte</h2>
@@ -714,12 +1001,15 @@ function NuevoParte({sess,obras,partes,sP,vehiculos,users,esCapataz}){
         ${participantes2.length>0&&html2`<p style=${{fontSize:11,color:"#6b7280",marginTop:4}}>Los trabajadores añadidos compartiran las mismas entradas y horarios del parte.</p>`}
       </div>`}
       ${err&&html2`<p class="er">${err}</p>`}
-      ${saving&&html2`<p style=${{color:"#0369a1"}},fontSize:13,background:"#e0f2fe",padding:"9px 13px",borderRadius:8,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+      ${saving&&html2`<p style=${{color:"#0369a1",fontSize:13,background:"#e0f2fe",padding:"9px 13px",borderRadius:8,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
       <span style=${{display:"inline-block",width:14,height:14,border:"2px solid #0369a1",borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
       Guardando en la base de datos...
     </p>`}
     ${ok==="guardado"&&html2`<p class="ok" style=${{display:"flex",alignItems:"center",gap:8}}>
       ✓ Parte guardado correctamente en la base de datos
+    </p>`}
+    ${ok==="pendiente"&&html2`<p style=${{color:"#92400e",fontSize:13,background:"#fef3c7",padding:"9px 13px",borderRadius:8,marginTop:8,fontWeight:600}}>
+      Sin cobertura: el parte se ha guardado en este movil y se enviara solo cuando haya conexion. No hace falta repetirlo.
     </p>`}
       <button class="bp" style=${{width:"100%",padding:14,fontSize:15,marginTop:8,opacity:saving?0.6:1}} onClick=${sub} disabled=${saving}>${saving?"Guardando...":"Guardar parte"}</button>
     </div>
@@ -959,7 +1249,7 @@ function CopyModal({parte,onClose,onCopy}){
   </div>`;
 }
 
-function MisPartes({partes,obras,sP,allP,users,sess,vehiculos}){
+function MisPartes({partes,obras,sP,dP,allP,users,sess,vehiculos}){
   const sorted=[...partes].sort((a,b)=>b.date.localeCompare(a.date));
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:700}}>
     <h2 class="pt">Mis Partes</h2>
@@ -977,7 +1267,7 @@ function MisPartes({partes,obras,sP,allP,users,sess,vehiculos}){
             Parte creado por encargado
           </div>`}
           <${ParteCard} p=${parteVista} obras=${obras} users=${users} vehiculos=${vehiculos}
-            onDelete=${esDeCapataz?null:id=>sP((allP||[]).filter(x=>x.id!==id))}
+            onDelete=${esDeCapataz?null:dP}
             onCopy=${esDeCapataz?null:fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(allP||[]),...n]);}}
             onEdit=${esDeCapataz?null:updated=>sP((allP||[]).map(x=>x.id===updated.id?updated:x))}
           />
@@ -986,7 +1276,7 @@ function MisPartes({partes,obras,sP,allP,users,sess,vehiculos}){
   </div>`;
 }
 
-function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
+function MisPartesCapataz({partes,obras,sP,dP,allP,users,sess,vehiculos}){
   const [modal,setModal]=useState(null);
   // Partes donde el capataz es creador (parte.worker===sess.username O parte.creadorCapataz===sess.username)
   const toArrP3=x=>!x?[]:Array.isArray(x)?x:Object.values(x).filter(v=>v&&typeof v==="object");
@@ -1047,7 +1337,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
             ${hE>0&&html2`<span class="bg2" style=${{background:"#ffedd5",color:"#c2410c"}}>${hE.toFixed(1)}h ext</span>`}
             <button style=${{padding:"7px 11px",borderRadius:8,border:"none",background:"#dcfce7",color:"#15803d",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=${()=>setModal({type:"pdf",parte:p})}>PDF</button>
             <button style=${{padding:"7px 11px",borderRadius:8,border:"none",background:"#e0f2fe",color:"#0369a1",fontWeight:700,cursor:"pointer",fontSize:12}} onClick=${()=>setModal({type:"edit",parte:p})}>Editar</button>
-            <button class="bd" onClick=${()=>{if(confirm("Eliminar parte?"))sP((allP||[]).filter(x=>x.id!==p.id));}}>X</button>
+            <button class="bd" onClick=${()=>{if(confirm("Eliminar parte?"))dP(p.id);}}>X</button>
           </div>
         </div>
 
@@ -1104,7 +1394,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
                 <span style=${{fontSize:13,fontWeight:600,color:"#1e293b"}}>${w?w.name:par.worker}</span>
                 <span class="bg2" style=${{background:"#dbeafe",color:"#1e40af",fontSize:10}}>${phO.toFixed(1)}h${phE>0?" + "+phE.toFixed(1)+"ext":""}</span>
               </div>
-              <button class="bd" style=${{padding:"4px 10px",fontSize:11}} onClick=${()=>{if(confirm("Quitar a ${w?w.name:par.worker} del parte?"))quitarParticipante(p,par.worker);}}>Quitar</button>
+              <button class="bd" style=${{padding:"4px 10px",fontSize:11}} onClick=${()=>{if(confirm("Quitar a "+(w?w.name:par.worker)+" del parte?"))quitarParticipante(p,par.worker);}}>Quitar</button>
             </div>`;
           })}
 
@@ -1126,7 +1416,7 @@ function MisPartesCapataz({partes,obras,sP,allP,users,sess,vehiculos}){
     ${modal?.type==="add"&&html2`<${ModalAnadirTrabajador} parte=${modal.parte} users=${users} obras=${obras}
       onClose=${()=>setModal(null)}
       onSave=${(updated)=>{onSaveParte(updated);setModal(null);}}/>`}
-    ${modal?.type==="edit"&&html2`<${ModalEditParte} parte=${modal.parte} obras=${obras} vehiculos=${vehiculos}
+    ${(modal?.type==="edit"||modal?.type==="editVehiculos")&&html2`<${ModalEditParte} parte=${modal.parte} obras=${obras} vehiculos=${vehiculos}
       onClose=${()=>setModal(null)}
       onSave=${(updated)=>{onSaveParte(updated);setModal(null);}}/>`}
     ${modal?.type==="pdf"&&html2`<${ModalFirmas} parte=${modal.parte} obras=${obras} users=${users}
@@ -1347,7 +1637,8 @@ function ModalPDFSemanal({partes,obras,users,onClose}){
 }
 
 
-function TodosPartes({partes,obras,users,sP,vehiculos}){
+function TodosPartes({partes,eliminados,obras,users,sP,dP,rP,vehiculos}){
+  const [verPap,setVerPap]=useState(false);
   const [fw,setFw]=useState("");const [fo,setFo]=useState("");const [fd,setFd]=useState("");const [ft,setFt]=useState("");
   const [pdfModal,setPdfModal]=useState(false);
   const ws=(users||[]).filter(u=>u.role==="worker"||u.role==="capataz");
@@ -1369,10 +1660,27 @@ function TodosPartes({partes,obras,users,sP,vehiculos}){
       </div>
       <button class="bs" onClick=${()=>{setFw("");setFo("");setFd("");setFt("");}}>Limpiar</button>
       <button class="bp" style=${{background:"#065f46",marginTop:0}} onClick=${()=>setPdfModal(true)}>PDF Semanal por Obra</button>
+      <button class="bs" style=${{marginLeft:8,borderColor:"#dc2626",color:"#dc2626"}} onClick=${()=>setVerPap(!verPap)}>${verPap?"Volver a los partes":"Papelera ("+(eliminados||[]).length+")"}</button>
     </div>
-    ${fl.length===0?html2`<div class="cd"><p class="em">Sin partes</p></div>`:
+    ${verPap?html2`<div>
+      <div class="cd" style=${{background:"#fef2f2"}}><p style=${{fontSize:13,color:"#991b1b",fontWeight:600}}>Partes eliminados. Puedes ver quien los borro y cuando, y restaurarlos.</p></div>
+      ${(eliminados||[]).length===0?html2`<div class="cd"><p class="em">La papelera esta vacia</p></div>`:
+        [...(eliminados||[])].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0)).map(p=>{
+          const w=(users||[]).find(u=>u.username===p.worker);
+          const quien=(users||[]).find(u=>u.username===p.deletedBy);
+          const h=(p.entries||[]).reduce((s,e)=>s+(e.totalHoras||0),0);
+          return html2`<div key=${p.id} class="cd" style=${{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style=${{fontWeight:800,color:"#1e293b"}}>${fmt(p.date)} · ${w?w.name:(p.worker||"(sin trabajador)")} · ${h.toFixed(1)}h</div>
+              <div style=${{fontSize:12,color:"#6b7280",marginTop:3}}>${(p.entries||[]).map(e=>e.obra).join(", ")}</div>
+              <div style=${{fontSize:12,color:"#b91c1c",marginTop:3}}>Eliminado por ${quien?quien.name:(p.deletedBy||"?")}${p.deletedAt?" el "+new Date(p.deletedAt).toLocaleString("es-ES"):""}</div>
+            </div>
+            <button class="bv" onClick=${()=>{if(confirm("Restaurar este parte?"))rP(p.id);}}>Restaurar</button>
+          </div>`;
+        })}
+    </div>`:fl.length===0?html2`<div class="cd"><p class="em">Sin partes</p></div>`:
       fl.map(p=>html2`<${ParteCard} key=${p.id} p=${p} obras=${obras} users=${users} vehiculos=${vehiculos}
-        onDelete=${id=>sP((partes||[]).filter(x=>x.id!==id))}
+        onDelete=${dP}
         onCopy=${fechas=>{const n=fechas.map(f=>({...p,date:f,id:Date.now()+Math.random()}));sP([...(partes||[]),...n]);}}
         onEdit=${updated=>sP((partes||[]).map(x=>x.id===updated.id?updated:x))}
       />`)}
@@ -1791,22 +2099,23 @@ function ResumenMensual({sess,partes}){
 }
 
 
-function MiCuenta({sess,users,sU}){
+function MiCuenta({sess,users,sU,renU}){
   const [pa,setPa]=useState("");const [pn,setPn]=useState("");const [pr,setPr]=useState("");
   const [nu,setNu]=useState("");const [pu,setPu]=useState("");
   const [okP,setOkP]=useState("");const [erP,setErP]=useState("");
   const [okU,setOkU]=useState("");const [erU,setErU]=useState("");
-  const cambiarPass=()=>{
+  const cambiarPass=async()=>{
     setErP("");setOkP("");
     const user=(users||[]).find(u=>u.username===sess.username);
     if(!user){setErP("Error");return;}
     if(pa!==user.password){setErP("Contrasena actual incorrecta");return;}
     if(pn.length<4){setErP("Minimo 4 caracteres");return;}
     if(pn!==pr){setErP("Las contrasenas no coinciden");return;}
-    sU((users||[]).map(u=>u.username===sess.username?{...u,password:pn}:u));
+    const guardado=await sU((users||[]).map(u=>u.username===sess.username?{...u,password:pn}:u));
+    if(!guardado){setErP("No se ha podido guardar. Comprueba la conexion e intentalo de nuevo.");return;}
     setPa("");setPn("");setPr("");setOkP("Contrasena cambiada");setTimeout(()=>setOkP(""),4000);
   };
-  const cambiarUser=()=>{
+  const cambiarUser=async()=>{
     setErU("");setOkU("");
     const user=(users||[]).find(u=>u.username===sess.username);
     if(!user){setErU("Error");return;}
@@ -1815,9 +2124,15 @@ function MiCuenta({sess,users,sU}){
     if(!/^[a-z0-9._-]+$/.test(nuevo)){setErU("Solo letras, numeros, puntos y guiones");return;}
     if(pu!==user.password){setErU("Contrasena incorrecta");return;}
     if((users||[]).find(u=>u.username===nuevo&&u.username!==sess.username)){setErU("Ese usuario ya existe");return;}
-    sU((users||[]).map(u=>u.username===sess.username?{...u,username:nuevo}:u));
-    setNu("");setPu("");setOkU("Usuario cambiado. Inicia sesion de nuevo.");
-    setTimeout(()=>window.location.reload(),2500);
+    setOkU("Cambiando usuario...");
+    try{
+      const n=await renU(sess.username,nuevo);
+      setNu("");setPu("");setOkU("Usuario cambiado"+(n?" ("+n+" partes actualizados)":"")+". Inicia sesion de nuevo.");
+      setTimeout(()=>window.location.reload(),2500);
+    }catch(e){
+      setOkU("");
+      setErU(e&&e.usuario?e.message:"No se ha podido cambiar el usuario: hace falta conexion. Intentalo de nuevo.");
+    }
   };
   return html2`<div class="pw" style=${{padding:"24px 20px",maxWidth:480}}>
     <h2 class="pt">Mi Cuenta</h2>
