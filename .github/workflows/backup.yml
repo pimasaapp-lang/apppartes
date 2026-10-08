@@ -1,55 +1,195 @@
-name: Backup semanal Firebase
+name: Backup diario Firebase
 
 on:
   schedule:
-    # Cada lunes a las 6:00 AM (hora UTC = 7:00 AM España invierno / 8:00 AM verano)
-    - cron: '0 6 * * 1'
-  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+    # Todos los dias a las 20:17 UTC = 22:17 en Espana en horario de verano (21:17 en invierno)
+    - cron: '17 20 * * *'
+  workflow_dispatch: # Permite lanzarlo a mano: pestana Actions > Backup diario Firebase > Run workflow
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backup-firebase
+  cancel-in-progress: false
 
 jobs:
   backup:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout repositorio
-        uses: actions/checkout@v4
+      - name: Descargar el repositorio
+        uses: actions/checkout@v5
 
-      - name: Descargar backup de Firebase
+      - name: Descargar la copia de Firebase y comprobarla
+        id: copia
+        env:
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
         run: |
-          DATE=$(date +%Y-%m-%d)
+          set -euo pipefail
+          DIA=$(TZ=Europe/Madrid date +%Y-%m-%d)
+          FICHERO="backups/backup_${DIA}.json"
           mkdir -p backups
-          curl -s "${{ secrets.FIREBASE_URL }}//.json" -o "backups/backup_${DATE}.json"
-          echo "Backup guardado: backups/backup_${DATE}.json"
-          # Mostrar cuantos partes hay
-          PARTES=$(python3 -c "import json; d=json.load(open('backups/backup_${DATE}.json')); p=d.get('partes',{}); print(len(p) if isinstance(p,dict) else len(p) if isinstance(p,list) else 0)" 2>/dev/null || echo "?")
-          echo "Partes en backup: $PARTES"
+          curl --fail --silent --show-error --retry 3 --retry-delay 15 --max-time 120 \
+            "${FIREBASE_URL%/}/.json" -o "${FICHERO}.tmp"
+          # Si Firebase devuelve un error o la copia viene vacia, se para aqui y GitHub avisa del fallo
+          python3 - "${FICHERO}.tmp" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          if not isinstance(d, dict):
+              sys.exit("Firebase no ha devuelto datos validos")
+          if "error" in d:
+              sys.exit("Firebase ha devuelto un error: " + str(d["error"]))
+          n = lambda x: len(x) if isinstance(x, (list, dict)) else 0
+          if n(d.get("partes")) == 0 or n(d.get("users")) == 0:
+              sys.exit("La copia no tiene partes o usuarios: no se guarda")
+          print("Copia correcta. Registros de partes:", n(d.get("partes")), "- usuarios:", n(d.get("users")))
+          PY
+          mv "${FICHERO}.tmp" "$FICHERO"
+          echo "fichero=$FICHERO" >> "$GITHUB_OUTPUT"
+          echo "dia=$DIA" >> "$GITHUB_OUTPUT"
 
-      - name: Eliminar backups de mas de 3 meses
+      - name: Comparar con la copia anterior
+        id: informe
+        continue-on-error: true
+        env:
+          FICHERO: ${{ steps.copia.outputs.fichero }}
         run: |
-          find backups/ -name "backup_*.json" -mtime +90 -delete 2>/dev/null || true
+          python3 - <<'PY'
+          import datetime, glob, json, os, re
+          fichero = os.environ["FICHERO"]
+          tmp = os.environ.get("RUNNER_TEMP", "/tmp")
+          def items(x):
+              if isinstance(x, list): return [(str(i), v) for i, v in enumerate(x) if v is not None]
+              if isinstance(x, dict): return list(x.items())
+              return []
+          def pk(i): return re.sub(r"[.#$/\[\]]", "_", str(i))
+          def leer_partes(d):
+              # Igual que la app: un parte por id; gana la copia guardada con su propia clave
+              mejor = {}
+              for k, v in items(d.get("partes")):
+                  if not isinstance(v, dict) or v.get("id") is None: continue
+                  sid = str(v["id"]); canon = (k == pk(sid)); ts = float(v.get("updatedAt") or 0)
+                  b = mejor.get(sid)
+                  if b is None or (canon and not b[1]) or (canon == b[1] and ts > b[2]): mejor[sid] = (v, canon, ts)
+              return {i: x[0] for i, x in mejor.items()}
+          def uni(s): return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s) if isinstance(s, str) else s
+          def fecha(f):
+              try: return datetime.date.fromisoformat(str(f)).strftime("%d/%m/%Y")
+              except Exception: return str(f)
+          hoy = json.load(open(fichero, encoding="utf-8"))
+          P = leer_partes(hoy)
+          nombres = {u["username"]: uni(u.get("name") or u["username"]) for _, u in items(hoy.get("users")) if isinstance(u, dict) and u.get("username")}
+          def quien(w): return nombres.get(w, "@" + str(w)) if w else "-"
+          def desc(p):
+              ents = [e for _, e in items(p.get("entries")) if isinstance(e, dict)]
+              h = sum(float(e.get("totalHoras") or 0) for e in ents)
+              obras = ", ".join(f"{e.get('obra', '?')} {e.get('horaEntrada', '')}-{e.get('horaSalida', '')}" for e in ents)
+              return f"{fecha(p.get('date'))} - {quien(p.get('worker') or p.get('creadorCapataz'))} - {h:g} h - {obras}"
+          vivos = [p for p in P.values() if not p.get("deleted")]
+          papelera = [p for p in P.values() if p.get("deleted")]
+          n = lambda x: len([v for _, v in items(x) if isinstance(v, dict)])
+          dia_es = fecha(os.path.basename(fichero)[7:17])
+          L = [f"Copia de seguridad diaria de GestionObras Pro - {dia_es}", "",
+               f"Partes: {len(vivos)}",
+               f"En la papelera: {len(papelera)}",
+               f"Usuarios: {n(hoy.get('users'))} - Obras: {n(hoy.get('obras'))} - Vehiculos: {n(hoy.get('vehiculos'))}", ""]
+          aviso = ""
+          anteriores = sorted(f for f in glob.glob("backups/backup_*.json") if os.path.basename(f) < os.path.basename(fichero))
+          if anteriores:
+              prev_f = anteriores[-1]
+              prev = leer_partes(json.load(open(prev_f, encoding="utf-8")))
+              dia_prev = fecha(os.path.basename(prev_f)[7:17])
+              faltan = [p for i, p in prev.items() if i not in P]
+              nuevos = [p for i, p in P.items() if i not in prev and not p.get("deleted")]
+              a_papelera = [p for i, p in P.items() if p.get("deleted") and i in prev and not prev[i].get("deleted")]
+              L.append(f"Comparado con la copia del {dia_prev}:")
+              L.append(f"  Partes nuevos: {len(nuevos)}")
+              L.append(f"  Partes enviados a la papelera: {len(a_papelera)}")
+              for p in sorted(a_papelera, key=lambda x: str(x.get("date"))):
+                  L.append(f"    - {desc(p)} (borrado por {quien(p.get('deletedBy'))})")
+              if faltan:
+                  aviso = f"FALTAN {len(faltan)} PARTE{'S' if len(faltan) != 1 else ''}"
+                  L += ["", f"ATENCION: faltan {len(faltan)} partes que estaban en la copia del {dia_prev}",
+                        "y se han borrado sin pasar por la papelera:"]
+                  L += [f"    - {desc(p)}" for p in sorted(faltan, key=lambda x: str(x.get("date")))]
+                  L.append(f"Se pueden recuperar con el archivo de la copia del {dia_prev} (backups/{os.path.basename(prev_f)}).")
+              else:
+                  L.append("  No falta ningun parte respecto a la copia anterior.")
+          else:
+              L.append("Es la primera copia: no hay otra anterior con la que comparar.")
+          L += ["", "El archivo adjunto tiene todos los datos (partes, usuarios, obras y vehiculos).",
+                "Tambien se guarda en GitHub: https://github.com/pimasaapp-lang/apppartes/tree/main/backups"]
+          asunto = f"Copia GestionObras Pro {dia_es} - {len(vivos)} partes"
+          if aviso: asunto = f"⚠ {aviso} - " + asunto
+          open(os.path.join(tmp, "asunto.txt"), "w", encoding="utf-8").write(asunto)
+          open(os.path.join(tmp, "cuerpo.txt"), "w", encoding="utf-8").write("\n".join(L) + "\n")
+          print(asunto); print("\n".join(L))
+          PY
 
-      - name: Guardar backup en repositorio
+      - name: Enviar la copia por correo
+        if: ${{ !cancelled() }}
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          COPIA_OK: ${{ steps.copia.outcome }}
+          FICHERO: ${{ steps.copia.outputs.fichero }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          python3 - <<'PY'
+          import datetime, os, re, smtplib, ssl
+          from email.message import EmailMessage
+          tmp = os.environ.get("RUNNER_TEMP", "/tmp")
+          def leer(nombre, defecto):
+              try: return open(os.path.join(tmp, nombre), encoding="utf-8").read()
+              except OSError: return defecto
+          from zoneinfo import ZoneInfo
+          dia_es = datetime.datetime.now(ZoneInfo("Europe/Madrid")).strftime("%d/%m/%Y")
+          destinos = [d.strip() for d in re.split(r"[,;]", os.environ.get("EMAIL_TO", "")) if d.strip()]
+          if not destinos: raise SystemExit("Falta el correo de destino (secreto EMAIL_TO)")
+          msg = EmailMessage()
+          msg["From"] = f"GestionObras Pro <{os.environ['EMAIL_USER']}>"
+          msg["To"] = ", ".join(destinos)
+          if os.environ.get("COPIA_OK") == "success":
+              msg["Subject"] = leer("asunto.txt", f"Copia GestionObras Pro {dia_es}").strip()
+              msg.set_content(leer("cuerpo.txt", f"Copia de seguridad diaria de GestionObras Pro - {dia_es}\n\nEl archivo adjunto tiene todos los datos.\n"))
+              fichero = os.environ["FICHERO"]
+              with open(fichero, "rb") as f:
+                  msg.add_attachment(f.read(), maintype="application", subtype="json", filename=os.path.basename(fichero))
+          else:
+              # La descarga ha fallado: se avisa igualmente para que nadie crea que hay copia
+              msg["Subject"] = f"⚠ ERROR en la copia de seguridad de GestionObras Pro {dia_es}"
+              msg.set_content("La copia de seguridad de hoy NO se ha podido hacer (Firebase no ha respondido o ha devuelto datos no validos).\n"
+                              "Las copias anteriores siguen guardadas. Detalle del error:\n" + os.environ.get("RUN_URL", "") + "\n")
+          host = os.environ.get("SMTP_HOST", "smtp.gmail.com"); port = int(os.environ.get("SMTP_PORT", "465"))
+          if os.environ.get("SMTP_SSL", "1") == "1":
+              s = smtplib.SMTP_SSL(host, port, context=ssl.create_default_context(), timeout=60)
+          else:
+              s = smtplib.SMTP(host, port, timeout=60)
+          with s:
+              if os.environ.get("SMTP_SSL", "1") == "1": s.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
+              s.send_message(msg)
+          print("Correo enviado a", len(destinos), "destinatario(s):", msg["Subject"])
+          PY
+
+      - name: Guardar la copia en el repositorio
+        if: ${{ !cancelled() && steps.copia.outcome == 'success' }}
+        run: |
+          set -eu
+          # En el repositorio se guardan los ultimos 90 dias (en el correo quedan todas)
+          LIMITE=$(TZ=Europe/Madrid date -d '90 days ago' +%Y-%m-%d)
+          for f in backups/backup_*.json; do
+            d=$(basename "$f" .json); d=${d#backup_}
+            if [[ "$d" < "$LIMITE" ]]; then rm -f "$f"; fi
+          done
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add backups/
-          git diff --staged --quiet || git commit -m "Backup semanal $(date +%Y-%m-%d)"
-          git push
-
-      - name: Enviar email con el backup
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USER }}
-          password: ${{ secrets.EMAIL_PASS }}
-          subject: "Backup GestionObras Pro - ${{ github.run_number }} - $(date +%d/%m/%Y)"
-          to: ${{ secrets.EMAIL_TO }}
-          from: GestionObras Pro <${{ secrets.EMAIL_USER }}>
-          body: |
-            Backup semanal automático de GestionObras Pro.
-
-            Fecha: $(date +%d/%m/%Y)
-            
-            El archivo JSON con todos los datos está adjunto a este correo.
-            También está guardado en GitHub: https://github.com/pimasaapp-lang/apppartes/tree/main/backups
-          attachments: backups/backup_$(date +%Y-%m-%d).json
+          git add -A backups/
+          if git diff --staged --quiet; then echo "Sin cambios que guardar"; exit 0; fi
+          git commit -q -m "Backup diario ${{ steps.copia.outputs.dia }}"
+          for _ in 1 2 3; do
+            if git push -q; then echo "Copia guardada en el repositorio"; exit 0; fi
+            sleep 10; git pull -q --rebase origin main
+          done
+          echo "No se ha podido subir la copia al repositorio"; exit 1
